@@ -1,0 +1,1521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LLM GPU Capacity Sizing Calculator</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg0:#0d1117;--bg1:#161b22;--bg2:#1c2230;--bg3:#252d3d;
+  --border:#30363d;--border2:#404859;
+  --t0:#e6edf3;--t1:#c9d1d9;--t2:#8b949e;--t3:#6e7681;
+  --accent:#58a6ff;--accent2:#388bfd;
+  --green:#3fb950;--yellow:#d29922;--red:#f85149;
+  --purple:#bc8cff;--orange:#ffa657;--teal:#39d353;--cyan:#79c0ff;
+  --r:8px;--r2:4px;
+}
+html{font-size:14px}
+body{background:var(--bg0);color:var(--t1);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;min-height:100vh}
+
+/* Header */
+.hdr{background:var(--bg1);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:100}
+.hdr-icon{font-size:22px}
+.hdr-titles h1{font-size:17px;font-weight:700;color:var(--t0)}
+.hdr-titles p{font-size:11px;color:var(--t2);margin-top:2px}
+.hdr-badge{margin-left:auto;background:var(--bg3);border:1px solid var(--border2);padding:4px 10px;border-radius:100px;font-size:11px;color:var(--t3)}
+
+/* Layout */
+.layout{display:grid;grid-template-columns:375px 1fr;min-height:calc(100vh - 54px)}
+.sidebar{background:var(--bg1);border-right:1px solid var(--border);overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+.sec{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.sec-hdr{padding:9px 13px;background:var(--bg3);font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--t2);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px}
+.sec-hdr-add{margin-left:auto;background:none;border:1px solid var(--border2);color:var(--accent);border-radius:4px;padding:1px 7px;font-size:13px;cursor:pointer;line-height:1.4;transition:background .15s}
+.sec-hdr-add:hover{background:rgba(56,139,253,.15)}
+.sec-body{padding:13px;display:flex;flex-direction:column;gap:10px}
+
+/* Tooltip anchor */
+.tip{display:inline-flex;width:15px;height:15px;border-radius:50%;background:rgba(56,139,253,.15);border:1px solid rgba(56,139,253,.4);align-items:center;justify-content:center;font-size:9px;color:var(--accent);cursor:help;flex-shrink:0}
+.tip:hover{background:rgba(56,139,253,.25)}
+
+/* Rich floating tooltip */
+#tt{position:fixed;z-index:9999;width:290px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r);padding:12px 14px;box-shadow:0 8px 32px rgba(0,0,0,.7);display:none;line-height:1.5;pointer-events:none}
+#tt.show{display:block}
+#tt.has-links{pointer-events:auto}
+.tt-title{font-size:12px;font-weight:700;color:var(--t0);margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.tt-text{font-size:11.5px;color:var(--t1);margin-bottom:7px}
+.tt-range{font-size:11px;color:var(--cyan);background:rgba(121,192,255,.08);border-radius:3px;padding:4px 8px;margin-bottom:8px}
+.tt-range b{font-weight:600}
+.tt-links{display:flex;flex-direction:column;gap:4px;border-top:1px solid var(--border);padding-top:7px;margin-top:2px}
+.tt-links a{font-size:11px;color:var(--accent);text-decoration:none;display:flex;align-items:center;gap:4px}
+.tt-links a::before{content:'↗';font-size:10px;opacity:.7}
+.tt-links a:hover{text-decoration:underline;color:var(--t0)}
+
+/* Fields */
+.field{display:flex;flex-direction:column;gap:4px}
+.field label{font-size:11.5px;color:var(--t2);display:flex;align-items:center;gap:5px}
+input[type="number"],select,input[type="text"]{background:var(--bg1);border:1px solid var(--border);color:var(--t0);border-radius:var(--r2);padding:6px 9px;font-size:12.5px;width:100%;outline:none;transition:border-color .15s}
+input:focus,select:focus{border-color:var(--accent2)}
+input[type="number"]::-webkit-inner-spin-button{-webkit-appearance:none}
+select option{background:var(--bg2)}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+.gpu-info{background:var(--bg1);border:1px solid var(--border);border-radius:var(--r2);padding:8px 10px;display:grid;grid-template-columns:1fr 1fr;gap:3px 10px;font-size:11px;color:var(--t3)}
+.gpu-info b{color:var(--t1)}
+.model-info{background:var(--bg1);border:1px solid var(--border);border-radius:var(--r2);padding:8px 10px;font-size:11px;color:var(--t3);display:flex;flex-wrap:wrap;gap:4px 12px}
+.model-info b{color:var(--t1)}
+.custom-fields{display:none}
+.calc-btn{background:var(--accent2);color:#fff;border:none;border-radius:var(--r2);padding:10px;font-size:13.5px;font-weight:700;cursor:pointer;width:100%;transition:background .15s}
+.calc-btn:hover{background:var(--accent)}
+
+/* Main */
+.main{padding:18px;display:flex;flex-direction:column;gap:16px;overflow-y:auto}
+
+/* Cards */
+.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.card{background:var(--bg1);border:1px solid var(--border);border-radius:var(--r);padding:16px}
+.card-label{font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+.card-value{font-size:30px;font-weight:800;line-height:1;letter-spacing:-.5px}
+.card-sub{font-size:10.5px;color:var(--t2);margin-top:6px;line-height:1.4}
+.card-bar{height:5px;background:var(--bg3);border-radius:3px;margin-top:11px;overflow:hidden}
+.card-bar-fill{height:100%;border-radius:3px;transition:width .6s}
+
+.sg{color:var(--green)}.sy{color:var(--yellow)}.sr{color:var(--red)}.sp{color:var(--purple)}.so{color:var(--orange)}.sc{color:var(--cyan)}
+
+/* Charts */
+.charts-row{display:grid;grid-template-columns:3fr 2fr;gap:12px}
+.chart-card{background:var(--bg1);border:1px solid var(--border);border-radius:var(--r);padding:16px}
+.chart-title{font-size:12.5px;font-weight:600;color:var(--t0);margin-bottom:12px;display:flex;align-items:center;gap:6px}
+.ch-wrap{position:relative;height:200px}
+.util-list{display:flex;flex-direction:column;gap:12px}
+.util-row .util-hdr{display:flex;justify-content:space-between;margin-bottom:5px;font-size:11.5px}
+.util-name{color:var(--t2)}.util-pct{font-weight:700}
+.util-bar{height:8px;background:var(--bg3);border-radius:4px;overflow:hidden}
+.util-fill{height:100%;border-radius:4px;transition:width .6s}
+.util-max{font-size:10px;color:var(--t3);margin-top:3px;text-align:right}
+
+/* Details */
+.details-card{background:var(--bg1);border:1px solid var(--border);border-radius:var(--r);padding:16px}
+.details-title{font-size:12.5px;font-weight:600;color:var(--t0);margin-bottom:14px}
+.details-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.dg h4{font-size:11px;color:var(--t2);margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:.5px}
+.dr{display:flex;justify-content:space-between;padding:3px 0;font-size:11.5px;gap:8px;border-bottom:1px solid rgba(48,54,61,.4)}
+.dr:last-child{border-bottom:none}
+.dr .k{color:var(--t2)}.dr .v{color:var(--t0);font-weight:600;text-align:right}
+
+/* Reco */
+.reco-card{background:var(--bg1);border:1px solid var(--border);border-radius:var(--r);padding:16px}
+.reco-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.reco-hdr h3{font-size:12.5px;font-weight:600;color:var(--t0)}
+.bn-badge{padding:4px 12px;border-radius:100px;font-size:11px;font-weight:700}
+.bn-mem{background:rgba(188,140,255,.2);color:var(--purple)}
+.bn-pre{background:rgba(255,166,87,.2);color:var(--orange)}
+.bn-dec{background:rgba(57,211,83,.2);color:var(--teal)}
+.bn-ok{background:rgba(56,139,253,.15);color:var(--accent)}
+.reco-list{display:flex;flex-direction:column;gap:7px}
+.reco{display:flex;align-items:flex-start;gap:10px;padding:9px 12px;border-radius:var(--r2);font-size:11.5px;line-height:1.55}
+.reco.ri{background:rgba(56,139,253,.1);border:1px solid rgba(56,139,253,.25);color:var(--t1)}
+.reco.rw{background:rgba(210,153,34,.1);border:1px solid rgba(210,153,34,.25);color:var(--t1)}
+.reco.rc{background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.25);color:var(--t1)}
+.reco.rg{background:rgba(63,185,80,.1);border:1px solid rgba(63,185,80,.25);color:var(--t1)}
+.reco-icon{font-size:15px;flex-shrink:0;margin-top:1px}
+
+/* Docs */
+.docs-wrap{background:var(--bg1);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.docs-toggle{padding:13px 16px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:12.5px;font-weight:600;color:var(--t0);user-select:none}
+.docs-toggle:hover{background:var(--bg2)}
+.docs-toggle .arr{transition:transform .2s;font-size:11px;color:var(--t2)}
+.docs-body{display:none;padding:18px;border-top:1px solid var(--border)}
+.docs-body.open{display:block}
+.docs-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+.dg2 h4{font-size:12px;font-weight:700;color:var(--t0);margin-bottom:8px;margin-top:16px}
+.dg2 h4:first-child{margin-top:0}
+.dg2 p,.dg2 li{font-size:11.5px;color:var(--t2);line-height:1.7}
+.dg2 ul{padding-left:14px}
+.dg2 code{font-family:'Consolas','Monaco',monospace;font-size:11px;background:var(--bg3);padding:1px 5px;border-radius:3px;color:var(--purple)}
+.formula-box{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:12px 14px;margin-top:8px;font-family:'Consolas','Monaco',monospace;font-size:11px;color:var(--teal);line-height:1.9;overflow-x:auto}
+.formula-box .cm{color:var(--t3)}
+.legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
+.legend-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--t2)}
+.legend-dot{width:10px;height:10px;border-radius:2px;flex-shrink:0}
+.placeholder{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:60px 40px;color:var(--t3);text-align:center}
+.placeholder-icon{font-size:48px;opacity:.4}
+.placeholder h3{font-size:15px;color:var(--t2);font-weight:500}
+.placeholder p{font-size:12px;line-height:1.6;max-width:400px}
+
+/* ── Modal ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:500;display:none}
+.modal-overlay.open{display:block}
+.modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:600;width:480px;max-width:95vw;max-height:90vh;overflow-y:auto;background:var(--bg1);border:1px solid var(--border2);border-radius:var(--r);box-shadow:0 16px 48px rgba(0,0,0,.8);display:none}
+.modal.open{display:block}
+.modal-hdr{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;border-bottom:1px solid var(--border);background:var(--bg2)}
+.modal-hdr h2{font-size:14px;font-weight:700;color:var(--t0)}
+.modal-close{background:none;border:none;color:var(--t2);font-size:18px;cursor:pointer;padding:2px 6px;border-radius:4px}
+.modal-close:hover{background:var(--bg3);color:var(--t0)}
+.modal-body{padding:18px;display:flex;flex-direction:column;gap:12px}
+.modal-save-btn{background:var(--accent2);color:#fff;border:none;border-radius:var(--r2);padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer;align-self:flex-start;transition:background .15s}
+.modal-save-btn:hover{background:var(--accent)}
+.modal-section-title{font-size:11px;color:var(--t2);text-transform:uppercase;letter-spacing:.6px;margin-top:6px;padding-top:12px;border-top:1px solid var(--border)}
+.saved-list{display:flex;flex-direction:column;gap:6px}
+.saved-item{display:flex;align-items:center;justify-content:space-between;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:8px 11px;font-size:12px}
+.saved-item-name{color:var(--t0);font-weight:600}
+.saved-item-meta{color:var(--t3);font-size:11px;margin-top:2px}
+.saved-item-del{background:none;border:1px solid rgba(248,81,73,.4);color:var(--red);border-radius:3px;padding:2px 7px;font-size:11px;cursor:pointer}
+.saved-item-del:hover{background:rgba(248,81,73,.1)}
+.empty-saved{font-size:11.5px;color:var(--t3);font-style:italic;padding:6px 0}
+.modal-note{font-size:11px;color:var(--t3);line-height:1.6;background:var(--bg2);border-radius:var(--r2);padding:8px 10px}
+
+@media(max-width:1200px){.details-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:900px){
+  .layout{grid-template-columns:1fr}
+  .sidebar{border-right:none;border-bottom:1px solid var(--border)}
+  .cards{grid-template-columns:repeat(2,1fr)}
+  .charts-row{grid-template-columns:1fr}
+  .details-grid{grid-template-columns:repeat(2,1fr)}
+  .docs-grid{grid-template-columns:1fr}
+  .modal{width:95vw}
+}
+</style>
+</head>
+<body>
+
+<!-- ═══════ FLOATING TOOLTIP ═══════ -->
+<div id="tt" role="tooltip">
+  <div class="tt-title" id="tt-title"></div>
+  <div class="tt-text" id="tt-text"></div>
+  <div class="tt-range" id="tt-range" style="display:none"></div>
+  <div class="tt-links" id="tt-links" style="display:none"></div>
+</div>
+
+<!-- ═══════ MODAL OVERLAY ═══════ -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeModal()"></div>
+
+<!-- ═══════ ADD GPU MODAL ═══════ -->
+<div class="modal" id="modal-gpu">
+  <div class="modal-hdr">
+    <h2>🖥️ Add Custom GPU</h2>
+    <button class="modal-close" onclick="closeModal()">✕</button>
+  </div>
+  <div class="modal-body">
+    <div class="modal-note">Define a GPU with custom specs. It will appear in the GPU dropdown and persist across sessions.</div>
+    <div class="field"><label>GPU Name / Label</label>
+      <input type="text" id="ag-name" placeholder="e.g. My Custom A100 80GB"></div>
+    <div class="row2">
+      <div class="field"><label>VRAM (GB) <span class="tip" data-tip-id="tip-vram">?</span></label>
+        <input type="number" id="ag-mem" value="80" min="1"></div>
+      <div class="field"><label>Memory Bandwidth (GB/s) <span class="tip" data-tip-id="tip-bw">?</span></label>
+        <input type="number" id="ag-bw" value="2000" min="1"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>FP16 TFLOPS <span class="tip" data-tip-id="tip-fp16">?</span></label>
+        <input type="number" id="ag-fp16" value="312" min="1"></div>
+      <div class="field"><label>FP8 TFLOPS (optional) <span class="tip" data-tip-id="tip-fp8">?</span></label>
+        <input type="number" id="ag-fp8" placeholder="Leave blank if N/A"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>TDP (W)</label>
+        <input type="number" id="ag-tdp" value="400" min="1"></div>
+      <div class="field"><label>Interconnect</label>
+        <input type="text" id="ag-ic" placeholder="e.g. NVLink 4, PCIe 5.0"></div>
+    </div>
+    <button class="modal-save-btn" onclick="saveCustomGPU()">＋ Save GPU</button>
+    <div class="modal-section-title">Saved Custom GPUs</div>
+    <div class="saved-list" id="saved-gpu-list"></div>
+  </div>
+</div>
+
+<!-- ═══════ ADD MODEL MODAL ═══════ -->
+<div class="modal" id="modal-model">
+  <div class="modal-hdr">
+    <h2>🧠 Add Custom Model</h2>
+    <button class="modal-close" onclick="closeModal()"></button>
+  </div>
+  <div class="modal-body">
+    <div class="modal-note">Define a model's architecture. KV cache sizing requires layers, KV heads, and head dimension. Find these in the model's <code>config.json</code> on Hugging Face.</div>
+    <div class="field"><label>Model Name / Label</label>
+      <input type="text" id="am-name" placeholder="e.g. My Fine-tuned Llama 70B"></div>
+    <div class="row2">
+      <div class="field"><label>Total Parameters (B) <span class="tip" data-tip-id="tip-params">?</span></label>
+        <input type="number" id="am-params" value="7" min="0.1" step="0.1"></div>
+      <div class="field"><label>Active Params (B) <span class="tip" data-tip-id="tip-active">?</span></label>
+        <input type="number" id="am-active" value="7" min="0.1" step="0.1"></div>
+    </div>
+    <div class="row3">
+      <div class="field"><label>Layers <span class="tip" data-tip-id="tip-layers">?</span></label>
+        <input type="number" id="am-layers" value="32" min="1"></div>
+      <div class="field"><label>KV Heads <span class="tip" data-tip-id="tip-kv-heads">?</span></label>
+        <input type="number" id="am-kv" value="8" min="1"></div>
+      <div class="field"><label>Head Dim <span class="tip" data-tip-id="tip-head-dim">?</span></label>
+        <input type="number" id="am-hd" value="128" min="32"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Attention Heads</label>
+        <input type="number" id="am-heads" value="32" min="1"></div>
+      <div class="field"><label>MoE model?</label>
+        <select id="am-moe"><option value="0">No (Dense)</option><option value="1">Yes (MoE)</option></select></div>
+    </div>
+    <button class="modal-save-btn" onclick="saveCustomModel()">＋ Save Model</button>
+    <div class="modal-section-title">Saved Custom Models</div>
+    <div class="saved-list" id="saved-model-list"></div>
+  </div>
+</div>
+
+<header class="hdr">
+  <div class="hdr-icon">⚡</div>
+  <div class="hdr-titles">
+    <h1>LLM GPU Capacity Sizing Calculator</h1>
+    <p>Estimate spare capacity, memory usage, and throughput for LLM inference deployments</p>
+  </div>
+  <div class="hdr-badge">v2.1 · 2025</div>
+</header>
+
+<div class="layout">
+<!-- ═══════════════════ SIDEBAR ═══════════════════ -->
+<div class="sidebar">
+
+  <!-- Workload -->
+  <div class="sec">
+    <div class="sec-hdr">📊 Workload</div>
+    <div class="sec-body">
+      <div class="field">
+        <label>Requests / Second (RPS)
+          <span class="tip" data-tip-id="rps">?</span></label>
+        <input type="number" id="rps" value="10" min="0.001" step="1">
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label>Input Tokens <span class="tip" data-tip-id="input-tokens">?</span></label>
+          <input type="number" id="input-tokens" value="512" min="1">
+        </div>
+        <div class="field">
+          <label>Output Tokens <span class="tip" data-tip-id="output-tokens">?</span></label>
+          <input type="number" id="output-tokens" value="256" min="1">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Model -->
+  <div class="sec">
+    <div class="sec-hdr">🧠 Model
+      <button class="sec-hdr-add" onclick="openModal('model')" title="Add a custom model">＋ Add</button>
+    </div>
+    <div class="sec-body">
+      <div class="field">
+        <label>Model <span class="tip" data-tip-id="model">?</span></label>
+        <select id="model" onchange="onModelChange()">
+          <optgroup label="── Llama ──">
+            <option>Llama 3.2 1B</option><option>Llama 3.2 3B</option>
+            <option>Llama 3.1 8B</option><option selected>Llama 3.1 70B</option>
+            <option>Llama 3.3 70B</option><option>Llama 3.1 405B</option>
+          </optgroup>
+          <optgroup label="── Mistral ──">
+            <option>Mistral 7B v0.3</option><option>Mistral Nemo 12B</option>
+            <option>Mixtral 8x7B (MoE)</option><option>Mixtral 8x22B (MoE)</option>
+          </optgroup>
+          <optgroup label="── Gemma ──">
+            <option>Gemma 2B</option><option>Gemma 7B</option>
+            <option>Gemma 2 9B</option><option>Gemma 2 27B</option>
+          </optgroup>
+          <optgroup label="── Phi ──">
+            <option>Phi-3 Mini 3.8B</option><option>Phi-3 Medium 14B</option><option>Phi-4 14B</option>
+          </optgroup>
+          <optgroup label="── Qwen ──">
+            <option>Qwen2.5 0.5B</option><option>Qwen2.5 1.5B</option><option>Qwen2.5 7B</option>
+            <option>Qwen2.5 14B</option><option>Qwen2.5 32B</option><option>Qwen2.5 72B</option>
+          </optgroup>
+          <optgroup label="── DeepSeek ──">
+            <option>DeepSeek-R1 Distill 7B</option><option>DeepSeek-R1 Distill 14B</option>
+            <option>DeepSeek-R1 Distill 70B</option><option>DeepSeek-R1 671B (MoE)</option>
+          </optgroup>
+          <optgroup label="── Other ──">
+            <option>Custom</option>
+          </optgroup>
+        </select>
+      </div>
+      <div id="model-info-box" class="model-info"></div>
+      <div id="custom-fields" class="custom-fields sec-body" style="padding:0;gap:8px">
+        <div class="row3">
+          <div class="field"><label>Params (B)</label><input type="number" id="c-params" value="7" min="0.1" step="0.1"></div>
+          <div class="field"><label>Layers</label><input type="number" id="c-layers" value="32" min="1"></div>
+          <div class="field"><label>KV Heads</label><input type="number" id="c-kv-heads" value="8" min="1"></div>
+        </div>
+        <div class="row3">
+          <div class="field"><label>Attn Heads</label><input type="number" id="c-heads" value="32" min="1"></div>
+          <div class="field"><label>Head Dim</label><input type="number" id="c-head-dim" value="128" min="32"></div>
+          <div class="field"><label>Active (B)</label><input type="number" id="c-active" value="7" min="0.1" step="0.1"></div>
+        </div>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label>Weight Precision <span class="tip" data-tip-id="precision">?</span></label>
+          <select id="precision">
+            <option value="fp32">FP32 (4 B/param)</option>
+            <option value="fp16" selected>FP16 (2 B/param)</option>
+            <option value="bf16">BF16 (2 B/param)</option>
+            <option value="fp8">FP8 (1 B/param)</option>
+            <option value="int8">INT8 (1 B/param)</option>
+            <option value="int4">INT4/GPTQ (0.5 B/param)</option>
+            <option value="nf4">NF4/AWQ (0.5 B/param)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>KV Precision <span class="tip" data-tip-id="kv-precision">?</span></label>
+          <select id="kv-precision">
+            <option value="fp16" selected>FP16 (2 B)</option>
+            <option value="bf16">BF16 (2 B)</option>
+            <option value="fp8">FP8 (1 B)</option>
+            <option value="int8">INT8 (1 B)</option>
+            <option value="int4">INT4 (0.5 B)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- GPU -->
+  <div class="sec">
+    <div class="sec-hdr">🖥️ Hardware
+      <button class="sec-hdr-add" onclick="openModal('gpu')" title="Add a custom GPU">＋ Add</button>
+    </div>
+    <div class="sec-body">
+      <div class="field">
+        <label>GPU Type <span class="tip" data-tip-id="gpu">?</span></label>
+        <select id="gpu" onchange="onGPUChange()">
+          <optgroup label="── NVIDIA Blackwell/Hopper ──">
+            <option>NVIDIA B200 SXM</option>
+            <option>NVIDIA H200 SXM</option>
+            <option selected>NVIDIA H100 SXM5 80GB</option>
+            <option>NVIDIA H100 PCIe 80GB</option>
+          </optgroup>
+          <optgroup label="── NVIDIA Ampere ──">
+            <option>NVIDIA A100 SXM4 80GB</option><option>NVIDIA A100 SXM4 40GB</option>
+            <option>NVIDIA A100 PCIe 80GB</option><option>NVIDIA A100 PCIe 40GB</option>
+            <option>NVIDIA A40 48GB</option><option>NVIDIA A10G 24GB</option>
+          </optgroup>
+          <optgroup label="── NVIDIA Ada Lovelace ──">
+            <option>NVIDIA L40S 48GB</option>
+            <option>NVIDIA RTX A6000 Ada 48GB</option>
+            <option>NVIDIA RTX 4090 24GB</option>
+          </optgroup>
+          <optgroup label="── NVIDIA Volta ──">
+            <option>NVIDIA V100 SXM2 32GB</option>
+            <option>NVIDIA V100 PCIe 16GB</option>
+          </optgroup>
+          <optgroup label="── AMD ──">
+            <option>AMD MI300X 192GB</option>
+            <option>AMD MI250X 128GB</option>
+            <option>AMD MI100 32GB</option>
+          </optgroup>
+          <optgroup label="── Other ──">
+            <option>Intel Gaudi 3 128GB</option>
+          </optgroup>
+        </select>
+      </div>
+      <div id="gpu-info-box" class="gpu-info"></div>
+      <div class="field">
+        <label>Number of GPUs <span class="tip" data-tip-id="num-gpus">?</span></label>
+        <input type="number" id="num-gpus" value="8" min="1" max="512">
+      </div>
+    </div>
+  </div>
+
+  <!-- Advanced -->
+  <div class="sec">
+    <div class="sec-hdr">⚙️ Advanced</div>
+    <div class="sec-body">
+      <div class="row2">
+        <div class="field">
+          <label>MFU % <span class="tip" data-tip-id="mfu">?</span></label>
+          <input type="number" id="mfu" value="40" min="1" max="95">
+        </div>
+        <div class="field">
+          <label>Memory Overhead % <span class="tip" data-tip-id="overhead">?</span></label>
+          <input type="number" id="overhead" value="10" min="0" max="50">
+        </div>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label>Concurrency Factor <span class="tip" data-tip-id="conc-factor">?</span></label>
+          <input type="number" id="conc-factor" value="1.2" min="1" max="3" step="0.1">
+        </div>
+        <div class="field">
+          <label>$/GPU-Hour <span class="tip" data-tip-id="cost-per-gpu-hr">?</span></label>
+          <input type="number" id="cost-per-gpu-hr" value="3.00" min="0" step="0.5">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <button class="calc-btn" onclick="calculate()">⚡ Calculate Capacity</button>
+</div>
+
+<!-- ═══════════════════ MAIN ═══════════════════ -->
+<div class="main" id="main-area">
+  <div class="placeholder" id="placeholder">
+    <div class="placeholder-icon">⚡</div>
+    <h3>Configure your workload and click Calculate</h3>
+    <p>Fill in GPU type, model, and request parameters on the left, then click <strong>Calculate Capacity</strong> to see memory breakdown, throughput utilization, spare capacity, and optimization recommendations.</p>
+  </div>
+</div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════
+// TOOLTIP DATA
+// ══════════════════════════════════════════════
+const TIPS = {
+  'rps': {
+    title: 'Requests Per Second (RPS)',
+    text: 'Steady-state throughput target. Use peak load (P99) rather than average for conservative sizing. One request = one complete prompt → response exchange.',
+    range: 'Typical: 1–500 RPS. Use peak, not average.',
+    links: [
+      { t: "Little's Law (Wikipedia)", u: 'https://en.wikipedia.org/wiki/Little%27s_law' },
+      { t: 'vLLM benchmarking guide', u: 'https://docs.vllm.ai/en/latest/performance/benchmarks.html' },
+    ]
+  },
+  'input-tokens': {
+    title: 'Input / Prompt Tokens',
+    text: 'Average token count in the prompt: system message + conversation history + user turn. Drives prefill compute cost and initial KV cache size. Longer prompts increase TTFT.',
+    range: 'Chat: 128–1024 · RAG: 1k–8k · CoT: 2k–16k',
+    links: [
+      { t: 'OpenAI Tokenizer (interactive)', u: 'https://platform.openai.com/tokenizer' },
+      { t: 'Hugging Face Tokenizer docs', u: 'https://huggingface.co/docs/transformers/tokenizer_summary' },
+    ]
+  },
+  'output-tokens': {
+    title: 'Output / Completion Tokens',
+    text: 'Average tokens generated per response. Each token requires one autoregressive decode step reading all model weights — typically the memory-bandwidth bottleneck.',
+    range: 'Chat: 64–512 · Coding: 256–2048 · Reasoning (CoT): 1k–8k+',
+    links: [
+      { t: 'How LLM generation works (HF blog)', u: 'https://huggingface.co/blog/how-to-generate' },
+    ]
+  },
+  'model': {
+    title: 'Model Architecture',
+    text: 'Selecting a model auto-fills architecture parameters (layers, KV heads, head dimension) used to compute KV cache size. Architecture params come from the model\'s config.json.',
+    links: [
+      { t: 'Llama 3 model card (Meta / HF)', u: 'https://huggingface.co/meta-llama/Meta-Llama-3.1-8B' },
+      { t: 'Open LLM Leaderboard', u: 'https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard' },
+      { t: 'Mistral models (HuggingFace)', u: 'https://huggingface.co/mistralai' },
+    ]
+  },
+  'precision': {
+    title: 'Weight Precision',
+    text: 'Data type for storing model weights in GPU memory. Lower precision = less memory, potentially lower quality. FP16/BF16 is production standard with no quality loss. FP8 requires H100/H200/B200.',
+    range: 'FP16 = 2× smaller than FP32 · INT4 = 8× smaller than FP32',
+    links: [
+      { t: 'GPTQ quantization paper', u: 'https://arxiv.org/abs/2210.17323' },
+      { t: 'AWQ quantization paper', u: 'https://arxiv.org/abs/2306.00978' },
+      { t: 'bitsandbytes (INT8/NF4)', u: 'https://github.com/TimDettmers/bitsandbytes' },
+    ]
+  },
+  'kv-precision': {
+    title: 'KV Cache Precision',
+    text: 'Data type for Key/Value attention tensors cached in GPU memory. Set independently of weight precision. FP8 KV cache (supported in vLLM ≥0.5, TensorRT-LLM) halves KV memory use.',
+    range: 'FP16: safest · FP8: saves 50% KV memory with minimal quality loss',
+    links: [
+      { t: 'FP8 KV cache paper (arXiv)', u: 'https://arxiv.org/abs/2404.09456' },
+      { t: 'vLLM FP8 KV cache docs', u: 'https://docs.vllm.ai/en/latest/features/quantization/fp8_e5m2_kvcache.html' },
+    ]
+  },
+  'gpu': {
+    title: 'GPU Type',
+    text: 'GPU hardware for your serving cluster. Specs are loaded from vendor datasheets. For inference, memory bandwidth is often the key metric — it determines single-request decode speed.',
+    links: [
+      { t: 'NVIDIA H100 datasheet', u: 'https://resources.nvidia.com/en-us-tensor-core/nvidia-tensor-core-gpu-datasheet' },
+      { t: 'NVIDIA A100 datasheet', u: 'https://www.nvidia.com/content/dam/en-zz/Solutions/Data-Center/a100/pdf/nvidia-a100-datasheet-us-nvidia-1758950-r4-web.pdf' },
+      { t: 'AMD MI300X product page', u: 'https://www.amd.com/en/products/accelerators/instinct/mi300/mi300x.html' },
+    ]
+  },
+  'num-gpus': {
+    title: 'Number of GPUs (Tensor Parallel)',
+    text: 'GPUs per serving instance via tensor parallelism (TP). The model is sharded across all GPUs — each one holds 1/N of the weights. More GPUs = more total VRAM and bandwidth.',
+    range: 'Single node: 1, 2, 4, 8 · Multi-node: 16, 32, 64+',
+    links: [
+      { t: 'Tensor parallelism (Megatron paper)', u: 'https://arxiv.org/abs/1909.08053' },
+      { t: 'vLLM distributed serving', u: 'https://docs.vllm.ai/en/latest/serving/distributed_serving.html' },
+    ]
+  },
+  'mfu': {
+    title: 'Model FLOPs Utilization (MFU)',
+    text: 'Fraction of peak TFLOPS actually used. Accounts for memory stalls, kernel launch overhead, GPU–GPU communication, and scheduling gaps. Higher is better.',
+    range: 'Inference: 30–55% · Training: 40–65% · Small models/few GPUs: 20–35%',
+    links: [
+      { t: 'MFU metric introduced in PaLM paper', u: 'https://arxiv.org/abs/2204.02311' },
+      { t: 'Achieving high GPU utilization (NVIDIA blog)', u: 'https://developer.nvidia.com/blog/maximizing-deep-learning-inference-performance-with-nvidia-model-analyzer/' },
+    ]
+  },
+  'overhead': {
+    title: 'Memory Overhead %',
+    text: 'GPU memory reserved for CUDA runtime, PyTorch/JAX allocations, NCCL communication buffers, and activations. This memory is NOT available for model weights or KV cache.',
+    range: 'vLLM: ~5–10% · TensorRT-LLM: ~5% · Naive PyTorch: ~15–20%',
+    links: [
+      { t: 'vLLM memory management docs', u: 'https://docs.vllm.ai/en/latest/design/kernel/paged_attention.html' },
+    ]
+  },
+  'conc-factor': {
+    title: 'Concurrency Safety Factor',
+    text: "Multiplier on Little's Law estimate to buffer for burst traffic, request queuing, and continuous-batching warm-up. 1.0 = theoretical minimum concurrent requests.",
+    range: '1.0 = ideal · 1.2 = recommended production · 1.5 = bursty/batch workloads',
+    links: [
+      { t: "Little's Law (Wikipedia)", u: 'https://en.wikipedia.org/wiki/Little%27s_law' },
+    ]
+  },
+  'cost-per-gpu-hr': {
+    title: 'Cost per GPU-Hour ($)',
+    text: 'On-demand or reserved hourly cost per single GPU. Used to estimate $/hr and cost per 1M tokens. Check your cloud provider\'s current pricing for accurate figures.',
+    range: 'A10G: ~$0.8–1.5 · A100 80GB: ~$2–4 · H100: ~$3–6/hr',
+    links: [
+      { t: 'AWS EC2 GPU pricing', u: 'https://aws.amazon.com/ec2/pricing/on-demand/' },
+      { t: 'Google Cloud GPU pricing', u: 'https://cloud.google.com/compute/gpus-pricing' },
+      { t: 'Azure GPU VM pricing', u: 'https://azure.microsoft.com/pricing/details/machine-learning/' },
+    ]
+  },
+  // Modal-only tips
+  'tip-vram': { title: 'VRAM (GB)', text: 'Total GPU video memory in gigabytes. Find this in the GPU spec sheet or via nvidia-smi.' },
+  'tip-bw': { title: 'Memory Bandwidth (GB/s)', text: 'Peak HBM bandwidth. This is the primary bottleneck for decode throughput at small batch sizes.' },
+  'tip-fp16': { title: 'FP16 Peak TFLOPS', text: 'Tensor-core FP16 peak performance. Used to estimate prefill compute throughput.' },
+  'tip-fp8': { title: 'FP8 TFLOPS (optional)', text: 'FP8 peak (typically 2× FP16). Available on H100, H200, B200, L40S, RTX 40xx. Leave blank if not supported.' },
+  'tip-params': { title: 'Total Parameters (B)', text: 'Total parameter count in billions. For dense models this equals active params. For MoE, this includes all expert weights.' },
+  'tip-active': { title: 'Active Parameters (B)', text: 'Parameters active per forward pass. Same as total for dense models. For MoE, this is the subset of experts activated per token (typically 10–30% of total).' },
+  'tip-layers': { title: 'Number of Layers', text: 'Transformer block count (num_hidden_layers in config.json). Directly scales KV cache size.' },
+  'tip-kv-heads': { title: 'KV Heads (num_key_value_heads)', text: 'Number of key/value attention heads per layer. With GQA (Llama, Mistral), this is fewer than total attention heads, reducing KV cache size.' },
+  'tip-head-dim': { title: 'Head Dimension', text: 'Dimension of each attention head (hidden_size / num_attention_heads). Common values: 64, 128, 256.' },
+
+  // ── Output / Results metric tips ──
+  'spare-cap': {
+    title: 'Spare Capacity',
+    text: 'Percentage of additional load (RPS) this cluster can absorb before any resource saturates. Computed as (1 − current_RPS / max_RPS) × 100. The max_RPS is the minimum across all three constraints.',
+    range: '≥30% = healthy prod buffer · 10–30% = monitor · <10% = near limit · 0% = overloaded',
+    links: [
+      { t: 'SRE workbook: capacity planning', u: 'https://sre.google/workbook/capacity-planning/' },
+      { t: 'Production serving best practices (Anyscale)', u: 'https://www.anyscale.com/blog/llm-inference-performance-engineering-best-practices' },
+    ]
+  },
+  'mem-util': {
+    title: 'Memory Utilization',
+    text: 'Fraction of usable GPU memory consumed: (model_weights + KV_cache + overhead) / usable_memory. Exceeding 100% causes out-of-memory errors — requests queue or fail.',
+    range: '≤75% = comfortable · 75–90% = monitor carefully · >90% = OOM risk',
+    links: [
+      { t: 'PagedAttention: efficient KV cache (arXiv)', u: 'https://arxiv.org/abs/2309.06180' },
+      { t: 'vLLM memory management docs', u: 'https://docs.vllm.ai/en/latest/design/kernel/paged_attention.html' },
+    ]
+  },
+  'prefill-util': {
+    title: 'Prefill Compute Utilization',
+    text: 'GPU TFLOPS consumed by prompt processing (prefill phase) as a fraction of effective compute capacity. Prefill is compute-bound — it processes all input tokens in a single batched forward pass.',
+    range: 'Under 80% is safe. >85% means new requests queue behind in-progress prefills.',
+    links: [
+      { t: 'Chunked prefill for better utilization (arXiv)', u: 'https://arxiv.org/abs/2401.08671' },
+      { t: 'Sarathi-Serve: chunked prefill scheduling', u: 'https://arxiv.org/abs/2308.16369' },
+    ]
+  },
+  'decode-util': {
+    title: 'Decode Throughput Utilization',
+    text: 'Fraction of effective decode capacity being consumed. At small batch sizes, decode is memory-bandwidth bound — throughput scales linearly with batch size up to the crossover point.',
+    links: [
+      { t: 'Speculative decoding to improve decode speed (arXiv)', u: 'https://arxiv.org/abs/2211.17192' },
+      { t: 'Medusa: multiple decoding heads', u: 'https://arxiv.org/abs/2401.10774' },
+    ]
+  },
+  'mem-chart': {
+    title: 'GPU Memory Breakdown',
+    text: 'How total GPU VRAM is partitioned: (1) Model Weights — fixed cost: params × bytes/param. (2) KV Cache — grows with concurrent requests × sequence length. (3) Free — available headroom. (4) Framework Overhead — CUDA, PyTorch, NCCL buffers.',
+    links: [
+      { t: 'PagedAttention paper (arXiv)', u: 'https://arxiv.org/abs/2309.06180' },
+      { t: 'FlashAttention-2 memory analysis (arXiv)', u: 'https://arxiv.org/abs/2307.08691' },
+    ]
+  },
+  'max-rps-chart': {
+    title: 'Max RPS by Constraint',
+    text: 'The maximum sustainable request rate from each independent resource constraint. The binding (smallest) value is your true maximum throughput. Focus optimization efforts on that constraint.',
+    links: [
+      { t: 'Bottleneck analysis for LLM serving', u: 'https://www.anyscale.com/blog/llm-inference-performance-engineering-best-practices' },
+    ]
+  },
+  'ttft': {
+    title: 'Time to First Token (TTFT)',
+    text: 'Latency from request arrival to the first generated token — equal to the prefill phase duration. Users perceive this as "time waiting for the response to begin." Longer prompts = longer TTFT.',
+    range: 'Interactive UX target: <300ms · Acceptable: <1s · Background tasks: any',
+    links: [
+      { t: 'LLM inference latency metrics (Anyscale blog)', u: 'https://www.anyscale.com/blog/llm-inference-performance-engineering-best-practices' },
+      { t: 'Chunked prefill to reduce TTFT', u: 'https://arxiv.org/abs/2401.08671' },
+    ]
+  },
+  'tbt': {
+    title: 'Time Between Tokens (TBT)',
+    text: 'Time between consecutive generated tokens — the inverse of the single-request decode rate. Memory-bandwidth bound at small batch sizes. Users perceive this as the "typing speed" of the streamed response.',
+    range: 'Imperceptible: <30ms · Comfortable reading: 30–100ms · Noticeable slow: >200ms',
+    links: [
+      { t: 'Understanding LLM streaming performance', u: 'https://www.anyscale.com/blog/llm-inference-performance-engineering-best-practices' },
+    ]
+  },
+  'e2e-latency': {
+    title: 'End-to-End Latency (E2E)',
+    text: 'Total time from request submission to last token: TTFT + (output_tokens × TBT). This is the user-facing response time. Note: at high concurrency, queuing adds latency not captured here.',
+    range: 'Interactive chat: <3s · Agentic/long-form: <30s',
+    links: [
+      { t: "Little's Law — used to derive concurrency", u: 'https://en.wikipedia.org/wiki/Little%27s_law' },
+    ]
+  },
+  'concurrent-reqs': {
+    title: 'Concurrent Requests (Estimated)',
+    text: "Number of requests in-flight simultaneously, estimated via Little's Law: concurrent = RPS × E2E_latency × concurrency_factor. This determines how much KV cache memory is needed at steady state.",
+    links: [
+      { t: "Little's Law (Wikipedia)", u: 'https://en.wikipedia.org/wiki/Little%27s_law' },
+      { t: 'Continuous batching for LLM serving', u: 'https://www.anyscale.com/blog/continuous-batching-llm-inference' },
+    ]
+  },
+  'crossover-batch': {
+    title: 'Decode Crossover Batch Size',
+    text: 'Batch size at which decode shifts from memory-bandwidth bound to compute bound. Below this threshold: each additional concurrent request scales decode throughput linearly. Above it: you hit the TFLOPS ceiling.',
+    range: 'Typical range: 10–500, depending on model size and GPU bandwidth-to-compute ratio.',
+    links: [
+      { t: 'Roofline model for ML performance', u: 'https://en.wikipedia.org/wiki/Roofline_model' },
+    ]
+  },
+  'kv-per-tok': {
+    title: 'KV Cache per Token',
+    text: 'Memory to store one token\'s Key and Value tensors across all attention layers: 2 × layers × kv_heads × head_dim × bytes_per_kv. With GQA (Llama 3, Mistral), fewer kv_heads dramatically shrinks this.',
+    links: [
+      { t: 'Grouped Query Attention (GQA) paper', u: 'https://arxiv.org/abs/2305.13245' },
+      { t: 'Multi-Query Attention (MQA) paper', u: 'https://arxiv.org/abs/1911.02150' },
+    ]
+  },
+  'kv-per-req': {
+    title: 'KV Cache per Request',
+    text: 'Total KV memory for one complete request context (input + output tokens): kv_per_token × (input_tokens + output_tokens). This is the per-request memory cost that must fit within the KV budget for each concurrent user.',
+  },
+  'total-kv': {
+    title: 'Total KV Cache Allocated',
+    text: 'KV memory allocated across all concurrent requests: concurrent_requests × kv_per_request. If this exceeds the KV budget, the system must queue requests or reduce sequence length.',
+  },
+  'kv-budget': {
+    title: 'KV Cache Budget',
+    text: 'GPU memory available for KV cache after subtracting model weights and framework overhead: usable_memory − model_memory. This is the hard ceiling on how many concurrent requests can be held in memory.',
+    links: [
+      { t: 'vLLM KV cache scheduling', u: 'https://docs.vllm.ai/en/latest/design/kernel/paged_attention.html' },
+    ]
+  },
+  'max-concurrent-mem': {
+    title: 'Max Concurrent (Memory-Limited)',
+    text: 'Maximum in-flight requests before the KV cache budget is exhausted: floor(kv_budget / kv_per_request). Exceeding this causes OOM unless requests are queued or preempted.',
+  },
+  'total-bw': {
+    title: 'Total Cluster Memory Bandwidth',
+    text: 'Aggregate HBM bandwidth across all GPUs: num_gpus × GPU_bandwidth_GBps. This is the primary throughput driver for decode at small batch sizes (memory-bandwidth bound regime).',
+    links: [
+      { t: 'NVIDIA H100 bandwidth specifications', u: 'https://resources.nvidia.com/en-us-tensor-core/nvidia-tensor-core-gpu-datasheet' },
+      { t: 'AMD MI300X bandwidth (192GB HBM3)', u: 'https://www.amd.com/en/products/accelerators/instinct/mi300/mi300x.html' },
+    ]
+  },
+  'single-decode-rate': {
+    title: 'Single-Request Decode Rate',
+    text: 'Peak tokens/second for one isolated request when the cluster is dedicated to it: total_bandwidth / (active_params × bytes_per_param). This sets the floor on streaming latency (TBT = 1 / this rate).',
+  },
+  'eff-decode-tps': {
+    title: 'Effective Decode Throughput',
+    text: 'Total decode tokens/second at the current concurrent batch: min(concurrent × single_decode_rate, compute_bound_rate). Scales linearly with batch up to the crossover, then plateaus.',
+    links: [
+      { t: 'Speculative decoding to surpass BW ceiling', u: 'https://arxiv.org/abs/2211.17192' },
+    ]
+  },
+  'max-prefill-tps': {
+    title: 'Max Prefill Throughput',
+    text: 'Peak rate at which the cluster can process prompt tokens (compute-bound): GPUs × FP16_TFLOPS × MFU / (2 × active_params). Caps the rate at which new requests can start.',
+    links: [
+      { t: 'PaLM paper introducing MFU metric', u: 'https://arxiv.org/abs/2204.02311' },
+    ]
+  },
+  'eff-tflops': {
+    title: 'Effective Cluster TFLOPS',
+    text: 'Practical compute available: peak_TFLOPS × MFU. At 40% MFU on 8× H100 SXM5 (1979 TF each), effective = 8 × 1979 × 0.40 ≈ 6,333 TFLOPS. MFU accounts for memory stalls, communication overhead, and kernel launch gaps.',
+    links: [
+      { t: 'MFU metric (PaLM paper)', u: 'https://arxiv.org/abs/2204.02311' },
+      { t: 'Measuring GPU utilization (NVIDIA)', u: 'https://developer.nvidia.com/blog/maximizing-deep-learning-inference-performance-with-nvidia-model-analyzer/' },
+    ]
+  },
+  'total-tdp': {
+    title: 'Total GPU Power (TDP)',
+    text: 'Sum of rated Thermal Design Power for all GPUs: num_gpus × GPU_TDP_W. Actual inference power draw is typically 80–95% of TDP. Useful for cooling requirements and energy cost estimates.',
+    links: [
+      { t: 'Data center power planning guide (NVIDIA)', u: 'https://docs.nvidia.com/datacenter/tesla/tesla-installation-notes/index.html' },
+    ]
+  },
+  'cost-per-hr': {
+    title: 'Total Cost per Hour',
+    text: 'Total compute cost per hour: num_gpus × cost_per_gpu_hr. Does not include networking, storage, or orchestration overhead. For spot/preemptible instances, actual cost may be 60–80% lower.',
+    links: [
+      { t: 'AWS EC2 GPU on-demand pricing', u: 'https://aws.amazon.com/ec2/pricing/on-demand/' },
+      { t: 'Google Cloud GPU pricing', u: 'https://cloud.google.com/compute/gpus-pricing' },
+    ]
+  },
+  'cost-per-mtok': {
+    title: 'Cost per 1M Output Tokens',
+    text: 'Amortized token cost at current RPS: cost_per_hr / (output_tokens_per_hr / 1e6). This metric improves with higher GPU utilization — an idle cluster still costs the same per hour.',
+    range: 'Self-hosted range: $0.10–$5/M tokens. API providers: $0.50–$30/M tokens.',
+    links: [
+      { t: 'LLM inference cost benchmarks (Artificial Analysis)', u: 'https://artificialanalysis.ai/' },
+      { t: 'Cost comparison: self-hosted vs API', u: 'https://www.anyscale.com/blog/llm-inference-performance-engineering-best-practices' },
+    ]
+  },
+  'min-gpus': {
+    title: 'Minimum GPUs Recommended',
+    text: 'Estimated minimum GPU count to serve the current RPS without saturation, based on the binding utilization. Add a 30%+ safety buffer above this minimum for burst tolerance.',
+  },
+  'output-mtok': {
+    title: 'Output Megatokens per Hour',
+    text: 'Total output tokens generated per hour: RPS × output_tokens × 3600 / 1,000,000. Useful as a throughput KPI or for estimating infrastructure needed to serve a specific token volume SLA.',
+  },
+  'bottleneck-badge': {
+    title: 'Binding Bottleneck',
+    text: 'The resource that saturates first as load increases, determining max_RPS. Three possible bottlenecks and their fixes:\n\n• KV Cache Memory → FP8 KV cache, INT4 weights, reduce seq len, add GPUs\n• Prefill Compute → prefix caching, chunked prefill, prompt compression\n• Decode Compute → speculative decoding, smaller model, INT4 quantization',
+    links: [
+      { t: 'Prefix caching in vLLM (automatic prefix caching)', u: 'https://docs.vllm.ai/en/latest/automatic_prefix_caching/apc.html' },
+      { t: 'Speculative decoding overview', u: 'https://arxiv.org/abs/2211.17192' },
+      { t: 'Continuous batching for LLM serving', u: 'https://www.anyscale.com/blog/continuous-batching-llm-inference' },
+    ]
+  },
+  'mem-util-bar':    { title: 'Memory Utilization', text: 'Total memory used ÷ usable memory. High values leave little room for additional concurrent requests or longer sequences.' },
+  'prefill-util-bar':{ title: 'Prefill Compute Utilization', text: 'TFLOPS consumed by prompt prefill ÷ effective compute. At saturation, new requests queue until an in-progress prefill completes.', links: [{ t: 'Chunked prefill (arXiv)', u:'https://arxiv.org/abs/2401.08671' }] },
+  'decode-util-bar': { title: 'Decode Throughput Utilization', text: 'Required decode tokens/sec ÷ effective decode capacity. Since decode capacity scales with batch size, this tracks how well bandwidth is used.', links: [{ t: 'Speculative decoding (arXiv)', u:'https://arxiv.org/abs/2211.17192' }] },
+  'bw-util-bar':     { title: 'Bandwidth Saturation (Decode)', text: 'How close concurrent requests are to the crossover batch size. At 100% you are fully in the bandwidth-bound regime; beyond crossover you become compute-bound.', links: [{ t: 'Roofline model', u:'https://en.wikipedia.org/wiki/Roofline_model' }] },
+};
+
+// ══════════════════════════════════════════════
+// GPU & MODEL DATA
+// ══════════════════════════════════════════════
+// [memGB, bwGBps, fp16TFLOPS, fp8TFLOPS_or_null, tdpW, interconnect]
+const GPU_SPECS = {
+  "NVIDIA B200 SXM":           [180, 8000, 4500, 9000,  1000, "NVLink 5"],
+  "NVIDIA H200 SXM":           [141, 4800, 1979, 3958,   700, "NVLink 4"],
+  "NVIDIA H100 SXM5 80GB":     [ 80, 3350, 1979, 3958,   700, "NVLink 4"],
+  "NVIDIA H100 PCIe 80GB":     [ 80, 2000, 1513, 3026,   350, "PCIe 5.0"],
+  "NVIDIA A100 SXM4 80GB":     [ 80, 2000,  312, null,   400, "NVLink 3"],
+  "NVIDIA A100 SXM4 40GB":     [ 40, 1555,  312, null,   400, "NVLink 3"],
+  "NVIDIA A100 PCIe 80GB":     [ 80, 1935,  312, null,   300, "PCIe 4.0"],
+  "NVIDIA A100 PCIe 40GB":     [ 40, 1555,  312, null,   300, "PCIe 4.0"],
+  "NVIDIA A40 48GB":           [ 48,  696,  150, null,   300, "PCIe 4.0"],
+  "NVIDIA A10G 24GB":          [ 24,  600,  125, null,   150, "PCIe 4.0"],
+  "NVIDIA L40S 48GB":          [ 48,  864,  733, 1466,   350, "PCIe 5.0"],
+  "NVIDIA RTX A6000 Ada 48GB": [ 48,  864,  309, null,   300, "PCIe 4.0"],
+  "NVIDIA RTX 4090 24GB":      [ 24, 1008,  165,  330,   450, "PCIe 4.0"],
+  "NVIDIA V100 SXM2 32GB":     [ 32,  900,  125, null,   300, "NVLink 2"],
+  "NVIDIA V100 PCIe 16GB":     [ 16,  900,  112, null,   250, "PCIe 3.0"],
+  "AMD MI300X 192GB":          [192, 5300, 1307, 2614,   750, "Infinity Fabric"],
+  "AMD MI250X 128GB":          [128, 3276,  383, null,   500, "Infinity Fabric"],
+  "AMD MI100 32GB":            [ 32, 1200,  184, null,   300, "Infinity Fabric"],
+  "Intel Gaudi 3 128GB":       [128, 3700, 1800, null,   600, "PCIe 5.0"],
+};
+
+// { p:params_B, L:layers, kv:kv_heads, h:attn_heads, hd:head_dim, ap:active_params_B, moe:bool }
+const MODEL_SPECS = {
+  "Llama 3.2 1B":             { p:1,    L:16,  kv:8,   h:32,  hd:64  },
+  "Llama 3.2 3B":             { p:3,    L:28,  kv:8,   h:24,  hd:128 },
+  "Llama 3.1 8B":             { p:8,    L:32,  kv:8,   h:32,  hd:128 },
+  "Llama 3.1 70B":            { p:70,   L:80,  kv:8,   h:64,  hd:128 },
+  "Llama 3.3 70B":            { p:70,   L:80,  kv:8,   h:64,  hd:128 },
+  "Llama 3.1 405B":           { p:405,  L:126, kv:8,   h:128, hd:128 },
+  "Mistral 7B v0.3":          { p:7,    L:32,  kv:8,   h:32,  hd:128 },
+  "Mistral Nemo 12B":         { p:12,   L:40,  kv:8,   h:32,  hd:128 },
+  "Mixtral 8x7B (MoE)":       { p:46.7, L:32,  kv:8,   h:32,  hd:128, ap:12.9, moe:true },
+  "Mixtral 8x22B (MoE)":      { p:141,  L:56,  kv:8,   h:48,  hd:128, ap:39,   moe:true },
+  "Gemma 2B":                 { p:2,    L:18,  kv:1,   h:8,   hd:256 },
+  "Gemma 7B":                 { p:7,    L:28,  kv:16,  h:16,  hd:256 },
+  "Gemma 2 9B":               { p:9,    L:42,  kv:8,   h:16,  hd:256 },
+  "Gemma 2 27B":              { p:27,   L:46,  kv:16,  h:32,  hd:128 },
+  "Phi-3 Mini 3.8B":          { p:3.8,  L:32,  kv:32,  h:32,  hd:96  },
+  "Phi-3 Medium 14B":         { p:14,   L:40,  kv:10,  h:40,  hd:128 },
+  "Phi-4 14B":                { p:14,   L:40,  kv:10,  h:40,  hd:128 },
+  "Qwen2.5 0.5B":             { p:0.5,  L:24,  kv:2,   h:14,  hd:64  },
+  "Qwen2.5 1.5B":             { p:1.5,  L:28,  kv:2,   h:12,  hd:128 },
+  "Qwen2.5 7B":               { p:7,    L:28,  kv:4,   h:28,  hd:128 },
+  "Qwen2.5 14B":              { p:14,   L:48,  kv:8,   h:40,  hd:128 },
+  "Qwen2.5 32B":              { p:32,   L:64,  kv:8,   h:40,  hd:128 },
+  "Qwen2.5 72B":              { p:72,   L:80,  kv:8,   h:64,  hd:128 },
+  "DeepSeek-R1 Distill 7B":   { p:7,    L:28,  kv:4,   h:28,  hd:128 },
+  "DeepSeek-R1 Distill 14B":  { p:14,   L:28,  kv:16,  h:16,  hd:128 },
+  "DeepSeek-R1 Distill 70B":  { p:70,   L:80,  kv:8,   h:64,  hd:128 },
+  "DeepSeek-R1 671B (MoE)":   { p:671,  L:61,  kv:128, h:128, hd:128, ap:37, moe:true },
+  "Custom":                   { p:null, L:null, kv:null, h:null, hd:null },
+};
+
+const PRECISION_BYTES = { fp32:4, fp16:2, bf16:2, fp8:1, int8:1, int4:0.5, nf4:0.5 };
+
+// ══════════════════════════════════════════════
+// CUSTOM GPU/MODEL STORAGE
+// ══════════════════════════════════════════════
+let customGPUs = {};
+let customModels = {};
+
+function loadCustomData() {
+  try { customGPUs  = JSON.parse(localStorage.getItem('llm-custom-gpus')   || '{}'); } catch(e){}
+  try { customModels= JSON.parse(localStorage.getItem('llm-custom-models') || '{}'); } catch(e){}
+  rebuildCustomGPUOptions();
+  rebuildCustomModelOptions();
+}
+
+function rebuildCustomGPUOptions() {
+  const sel = g('gpu');
+  const old = sel.querySelector('optgroup[data-custom]');
+  if (old) sel.removeChild(old);
+  const keys = Object.keys(customGPUs);
+  if (!keys.length) return;
+  const og = document.createElement('optgroup');
+  og.label = '── My Custom GPUs ──';
+  og.dataset.custom = '1';
+  keys.forEach(k => { const o = new Option(k, k); og.appendChild(o); });
+  sel.insertBefore(og, sel.firstChild);
+}
+
+function rebuildCustomModelOptions() {
+  const sel = g('model');
+  const old = sel.querySelector('optgroup[data-custom]');
+  if (old) sel.removeChild(old);
+  const keys = Object.keys(customModels);
+  if (!keys.length) return;
+  const og = document.createElement('optgroup');
+  og.label = '── My Custom Models ──';
+  og.dataset.custom = '1';
+  keys.forEach(k => { const o = new Option(k, k); og.appendChild(o); });
+  sel.insertBefore(og, sel.firstChild);
+}
+
+function saveCustomGPU() {
+  const name = g('ag-name').value.trim();
+  if (!name) { alert('Please enter a GPU name.'); return; }
+  const mem  = parseFloat(g('ag-mem').value)  || 0;
+  const bw   = parseFloat(g('ag-bw').value)   || 0;
+  const fp16 = parseFloat(g('ag-fp16').value) || 0;
+  const fp8  = parseFloat(g('ag-fp8').value)  || null;
+  const tdp  = parseFloat(g('ag-tdp').value)  || 0;
+  const ic   = g('ag-ic').value.trim() || 'Custom';
+  if (!mem || !bw || !fp16) { alert('VRAM, Bandwidth, and FP16 TFLOPS are required.'); return; }
+  customGPUs[name] = [mem, bw, fp16, fp8 || null, tdp, ic];
+  localStorage.setItem('llm-custom-gpus', JSON.stringify(customGPUs));
+  rebuildCustomGPUOptions();
+  renderSavedGPUs();
+  g('ag-name').value = '';
+}
+
+function deleteCustomGPU(name) {
+  delete customGPUs[name];
+  localStorage.setItem('llm-custom-gpus', JSON.stringify(customGPUs));
+  rebuildCustomGPUOptions();
+  renderSavedGPUs();
+}
+
+function saveCustomModel() {
+  const name = g('am-name').value.trim();
+  if (!name) { alert('Please enter a model name.'); return; }
+  const p  = parseFloat(g('am-params').value)  || 0;
+  const ap = parseFloat(g('am-active').value)  || p;
+  const L  = parseInt(g('am-layers').value)    || 0;
+  const kv = parseInt(g('am-kv').value)        || 0;
+  const hd = parseInt(g('am-hd').value)        || 0;
+  const h  = parseInt(g('am-heads').value)     || 0;
+  const moe= g('am-moe').value === '1';
+  if (!p || !L || !kv || !hd) { alert('Params, Layers, KV Heads, and Head Dim are required.'); return; }
+  customModels[name] = { p, L, kv, h, hd, ap: moe ? ap : p, moe };
+  localStorage.setItem('llm-custom-models', JSON.stringify(customModels));
+  rebuildCustomModelOptions();
+  renderSavedModels();
+  g('am-name').value = '';
+}
+
+function deleteCustomModel(name) {
+  delete customModels[name];
+  localStorage.setItem('llm-custom-models', JSON.stringify(customModels));
+  rebuildCustomModelOptions();
+  renderSavedModels();
+}
+
+function renderSavedGPUs() {
+  const el = g('saved-gpu-list');
+  const keys = Object.keys(customGPUs);
+  if (!keys.length) { el.innerHTML = '<div class="empty-saved">No custom GPUs saved yet.</div>'; return; }
+  el.innerHTML = keys.map(k => {
+    const s = customGPUs[k];
+    return `<div class="saved-item">
+      <div>
+        <div class="saved-item-name">${esc(k)}</div>
+        <div class="saved-item-meta">${s[0]}GB · ${s[1]} GB/s · ${s[2]} TFLOPS${s[3]?` · FP8:${s[3]}`:''}</div>
+      </div>
+      <button class="saved-item-del" onclick="deleteCustomGPU(${JSON.stringify(k)})">✕ Remove</button>
+    </div>`;
+  }).join('');
+}
+
+function renderSavedModels() {
+  const el = g('saved-model-list');
+  const keys = Object.keys(customModels);
+  if (!keys.length) { el.innerHTML = '<div class="empty-saved">No custom models saved yet.</div>'; return; }
+  el.innerHTML = keys.map(k => {
+    const m = customModels[k];
+    return `<div class="saved-item">
+      <div>
+        <div class="saved-item-name">${esc(k)}</div>
+        <div class="saved-item-meta">${m.p}B params · ${m.L} layers · ${m.kv} KV heads · head_dim ${m.hd}${m.moe?' · MoE':''}</div>
+      </div>
+      <button class="saved-item-del" onclick="deleteCustomModel(${JSON.stringify(k)})">✕ Remove</button>
+    </div>`;
+  }).join('');
+}
+
+// ══════════════════════════════════════════════
+// MODAL LOGIC
+// ══════════════════════════════════════════════
+function openModal(type) {
+  g('modal-overlay').classList.add('open');
+  g('modal-gpu').classList.remove('open');
+  g('modal-model').classList.remove('open');
+  if (type === 'gpu') {
+    g('modal-gpu').classList.add('open');
+    renderSavedGPUs();
+  } else {
+    g('modal-model').classList.add('open');
+    renderSavedModels();
+  }
+}
+function closeModal() {
+  g('modal-overlay').classList.remove('open');
+  g('modal-gpu').classList.remove('open');
+  g('modal-model').classList.remove('open');
+}
+document.addEventListener('keydown', e => { if(e.key==='Escape') closeModal(); });
+
+// ══════════════════════════════════════════════
+// TOOLTIP LOGIC
+// ══════════════════════════════════════════════
+let tipTimer = null;
+const ttEl = document.getElementById('tt');
+
+function showTip(anchor) {
+  clearTimeout(tipTimer);
+  const id = anchor.dataset.tipId;
+  const data = TIPS[id];
+  if (!data) return;
+
+  g('tt-title').textContent = data.title;
+  g('tt-text').textContent  = data.text;
+
+  const rangeEl = g('tt-range');
+  if (data.range) { rangeEl.textContent = '📊 ' + data.range; rangeEl.style.display='block'; }
+  else rangeEl.style.display = 'none';
+
+  const linksEl = g('tt-links');
+  if (data.links && data.links.length) {
+    linksEl.innerHTML = data.links.map(l =>
+      `<a href="${l.u}" target="_blank" rel="noopener noreferrer">${l.t}</a>`
+    ).join('');
+    linksEl.style.display = 'flex';
+    ttEl.classList.add('has-links');
+  } else {
+    linksEl.style.display = 'none';
+    ttEl.classList.remove('has-links');
+  }
+
+  // Position: right of anchor, or left if near right edge
+  const rect = anchor.getBoundingClientRect();
+  ttEl.classList.add('show');
+  const ttW = ttEl.offsetWidth || 290;
+  const ttH = ttEl.offsetHeight || 150;
+  let left = rect.right + 10;
+  let top  = rect.top - 4;
+  if (left + ttW > window.innerWidth - 10) left = rect.left - ttW - 10;
+  if (top + ttH > window.innerHeight - 10) top = window.innerHeight - ttH - 10;
+  if (top < 10) top = 10;
+  ttEl.style.left = left + 'px';
+  ttEl.style.top  = top  + 'px';
+}
+
+function schedulHide() {
+  tipTimer = setTimeout(() => ttEl.classList.remove('show'), 250);
+}
+
+function initTooltips() {
+  document.querySelectorAll('[data-tip-id]').forEach(el => {
+    el.addEventListener('mouseenter', () => showTip(el));
+    el.addEventListener('mouseleave', schedulHide);
+  });
+  ttEl.addEventListener('mouseenter', () => clearTimeout(tipTimer));
+  ttEl.addEventListener('mouseleave', schedulHide);
+}
+
+// ══════════════════════════════════════════════
+// HELPERS
+// ══════════════════════════════════════════════
+function g(id)    { return document.getElementById(id) }
+function getNum(id){ return parseFloat(g(id).value) || 0 }
+function esc(s)   { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }
+function fmtGB(n) {
+  const b = n * 1e9;
+  if(b >= 1e9) return n.toFixed(1)+' GB';
+  if(b >= 1e6) return (b/1e6).toFixed(0)+' MB';
+  if(b >= 1e3) return (b/1e3).toFixed(0)+' KB';
+  return b.toFixed(0)+' B';
+}
+function fmtKV(gbPT) {
+  const b = gbPT * 1e9;
+  return b >= 1e6 ? (b/1e6).toFixed(1)+' MB' : (b/1e3).toFixed(0)+' KB';
+}
+function fmtK(n)  { return n >= 1000 ? (n/1000).toFixed(1)+'k' : n.toFixed(0) }
+function pct(n)   { return Math.min(999, n*100).toFixed(1)+'%' }
+function fmtMs(s) { return s < 1 ? (s*1000).toFixed(0)+'ms' : s.toFixed(2)+'s' }
+function fmtTPS(n){ if(n>=1e6) return (n/1e6).toFixed(1)+'M t/s'; if(n>=1e3) return (n/1e3).toFixed(1)+'k t/s'; return n.toFixed(0)+' t/s' }
+function statusColor(v) { return v<=.70?'var(--green)':v<=.90?'var(--yellow)':'var(--red)' }
+function spareClass(sp) { return sp>=30?'sg':sp>=10?'sy':'sr' }
+
+// ══════════════════════════════════════════════
+// GPU / MODEL CHANGE HANDLERS
+// ══════════════════════════════════════════════
+function onGPUChange() {
+  const key = g('gpu').value;
+  const spec = GPU_SPECS[key] || customGPUs[key];
+  if (!spec) { g('gpu-info-box').innerHTML=''; return; }
+  const fp8txt = spec[3] ? `<span>FP8 TFLOPS:</span><b>${spec[3]}</b>` : '';
+  g('gpu-info-box').innerHTML = `
+    <span>VRAM:</span><b>${spec[0]} GB</b>
+    <span>Bandwidth:</span><b>${spec[1]} GB/s</b>
+    <span>FP16 TFLOPS:</span><b>${spec[2]}</b>
+    ${fp8txt}
+    <span>TDP:</span><b>${spec[4]} W</b>
+    <span>Interconnect:</span><b>${spec[5]}</b>`;
+  initTooltips();
+}
+
+function onModelChange() {
+  const key = g('model').value;
+  const m = MODEL_SPECS[key] || customModels[key];
+  const cf = g('custom-fields');
+  const mb = g('model-info-box');
+  if (key === 'Custom') { cf.style.display='flex'; mb.innerHTML=''; return; }
+  cf.style.display = 'none';
+  if (!m) { mb.innerHTML=''; return; }
+  const moeTag = m.moe ? ` <b style="color:var(--orange)">[MoE · active ${m.ap}B]</b>` : '';
+  mb.innerHTML = `
+    <span>Params:</span><b>${m.p}B${moeTag}</b>
+    <span>Layers:</span><b>${m.L}</b>
+    <span>KV Heads:</span><b>${m.kv}</b>
+    <span>Attn Heads:</span><b>${m.h}</b>
+    <span>Head Dim:</span><b>${m.hd}</b>`;
+}
+
+// ══════════════════════════════════════════════
+// CORE CALCULATION
+// ══════════════════════════════════════════════
+function calculate() {
+  const rps         = getNum('rps');
+  const inTok       = getNum('input-tokens');
+  const outTok      = getNum('output-tokens');
+  const mfuPct      = getNum('mfu') / 100;
+  const overheadPct = getNum('overhead') / 100;
+  const concFactor  = getNum('conc-factor');
+  const costPerGPUHr= getNum('cost-per-gpu-hr');
+  const numGPUs     = getNum('num-gpus');
+  const gpuKey      = g('gpu').value;
+  const modelKey    = g('model').value;
+  const prec        = g('precision').value;
+  const kvPrec      = g('kv-precision').value;
+
+  const gpu = GPU_SPECS[gpuKey] || customGPUs[gpuKey];
+  let m     = MODEL_SPECS[modelKey] || customModels[modelKey];
+
+  if (modelKey === 'Custom') {
+    const ap = getNum('c-active') || getNum('c-params');
+    m = { p:getNum('c-params'), L:getNum('c-layers'), kv:getNum('c-kv-heads'),
+          h:getNum('c-heads'), hd:getNum('c-head-dim'), ap, moe: ap < getNum('c-params') };
+  }
+
+  if (!gpu || !m || !m.p) { alert('Please select a valid GPU and model.'); return; }
+
+  const params_B  = m.p;
+  const activeP_B = m.moe ? (m.ap || params_B) : params_B;
+  const layers    = m.L;
+  const kvHeads   = m.kv;
+  const headDim   = m.hd;
+  const wBytes    = PRECISION_BYTES[prec];
+  const kvBytes   = PRECISION_BYTES[kvPrec];
+
+  // GPU totals
+  const totalMemGB  = numGPUs * gpu[0];
+  const totalBWGBps = numGPUs * gpu[1];
+  const totalTFLOPS = numGPUs * gpu[2];
+  const gpuTDP      = gpu[4];
+
+  // Memory breakdown
+  const modelMemGB   = params_B * wBytes;
+  const fwOverheadGB = totalMemGB * overheadPct;
+  const usableMemGB  = totalMemGB - fwOverheadGB;
+  const kvBytesPerPos= 2 * layers * kvHeads * headDim * kvBytes;
+  const kvGBPerTok   = kvBytesPerPos / 1e9;
+  const seqLen       = inTok + outTok;
+  const kvGBPerReq   = kvGBPerTok * seqLen;
+  const kvBudgetGB   = Math.max(0, usableMemGB - modelMemGB);
+
+  // Throughput limits
+  const activeBytesTotal    = activeP_B * 1e9 * wBytes;
+  const singleDecodeRateTPS = (totalBWGBps * 1e9) / activeBytesTotal;
+  const maxPrefillTPS       = (totalTFLOPS * mfuPct * 1e12) / (2 * activeP_B * 1e9);
+  const maxDecodeTPSCompute = maxPrefillTPS;
+  const crossoverBatch      = Math.max(1, Math.round(maxDecodeTPSCompute / singleDecodeRateTPS));
+
+  // Latency
+  const ttft       = inTok  / maxPrefillTPS;
+  const tbt        = 1.0    / singleDecodeRateTPS;
+  const e2eLatency = ttft + outTok * tbt;
+
+  // Concurrency (Little's Law + safety factor)
+  const concRequests = rps * e2eLatency * concFactor;
+
+  // KV cache needed
+  const requiredKVGB   = concRequests * kvGBPerReq;
+  const totalReqMemGB  = modelMemGB + requiredKVGB + fwOverheadGB;
+
+  // Effective decode TPS
+  const effBatch        = Math.min(concRequests, crossoverBatch);
+  const actualDecodeTPS = Math.min(effBatch * singleDecodeRateTPS, maxDecodeTPSCompute);
+
+  // Required TPS
+  const reqPrefillTPS = rps * inTok;
+  const reqDecodeTPS  = rps * outTok;
+
+  // Utilizations
+  const memUtil     = totalReqMemGB / usableMemGB;
+  const prefillUtil = reqPrefillTPS / maxPrefillTPS;
+  const decodeUtil  = actualDecodeTPS > 0 ? reqDecodeTPS / actualDecodeTPS : 0;
+  const bwUtil      = Math.min(1, concRequests / Math.max(1, crossoverBatch));
+
+  // Max RPS per constraint
+  const maxRPS_mem    = kvBudgetGB > 0 ? (kvBudgetGB / kvGBPerReq) / (e2eLatency * concFactor) : 0;
+  const maxRPS_prefill= maxPrefillTPS / Math.max(1, inTok);
+  const maxRPS_decode = maxDecodeTPSCompute / Math.max(1, outTok);
+  const maxRPS        = Math.min(maxRPS_mem, maxRPS_prefill, maxRPS_decode);
+
+  // Spare capacity
+  const overallUtil  = rps / Math.max(0.001, maxRPS);
+  const spareCapPct  = Math.max(0, (1 - overallUtil) * 100);
+  const maxAddlRPS   = Math.max(0, maxRPS - rps);
+
+  // Bottleneck
+  const minMax = Math.min(maxRPS_mem, maxRPS_prefill, maxRPS_decode);
+  let bottleneck = minMax === maxRPS_mem ? 'KV Cache Memory'
+                 : minMax === maxRPS_prefill ? 'Prefill Compute' : 'Decode Compute';
+
+  // Cost
+  const costPerHr   = numGPUs * costPerGPUHr;
+  const tokPerHr    = rps * (inTok + outTok) * 3600;
+  const costPerMTok = tokPerHr > 0 ? (costPerHr / tokPerHr) * 1e6 : 0;
+  const minGPUs_rec = Math.max(Math.ceil(numGPUs * memUtil), Math.ceil(numGPUs * prefillUtil), 1);
+
+  renderDashboard({
+    rps, inTok, outTok, numGPUs, params_B, activeP_B, layers, kvHeads, headDim,
+    prec, kvPrec, mfuPct, gpuKey, modelKey, isMoE: m.moe||false,
+    totalMemGB, usableMemGB, fwOverheadGB, modelMemGB, kvBudgetGB,
+    kvGBPerTok, kvGBPerReq, requiredKVGB, totalReqMemGB,
+    totalBWGBps, totalTFLOPS, singleDecodeRateTPS,
+    maxPrefillTPS, maxDecodeTPSCompute, crossoverBatch, actualDecodeTPS,
+    reqPrefillTPS, reqDecodeTPS,
+    ttft, tbt, e2eLatency, concRequests,
+    memUtil, prefillUtil, decodeUtil, bwUtil,
+    maxRPS_mem, maxRPS_prefill, maxRPS_decode, maxRPS, maxAddlRPS,
+    overallUtil, spareCapPct, bottleneck,
+    costPerHr, costPerMTok, minGPUs_rec, gpu
+  });
+}
+
+// ══════════════════════════════════════════════
+// RENDER
+// ══════════════════════════════════════════════
+let memChart = null;
+
+function renderDashboard(r) {
+  const sp    = r.spareCapPct;
+  const spCls = spareClass(sp);
+
+  g('main-area').innerHTML = `
+  <div class="cards">
+    <div class="card">
+      <div class="card-label">Spare Capacity <span class="tip" data-tip-id="spare-cap">?</span></div>
+      <div class="card-value ${spCls}">${sp.toFixed(1)}%</div>
+      <div class="card-sub">Max RPS: <b>${fmtK(r.maxRPS)}</b> · Current: <b>${fmtK(r.rps)}</b><br>+${fmtK(r.maxAddlRPS)} req/s headroom</div>
+      <div class="card-bar"><div class="card-bar-fill" style="width:${Math.min(100,(1-sp/100)*100)}%;background:${sp>=30?'var(--green)':sp>=10?'var(--yellow)':'var(--red)'}"></div></div>
+    </div>
+    <div class="card">
+      <div class="card-label">Memory Utilization <span class="tip" data-tip-id="mem-util">?</span></div>
+      <div class="card-value" style="color:${statusColor(r.memUtil)}">${pct(r.memUtil)}</div>
+      <div class="card-sub">${fmtGB(r.totalReqMemGB)} / ${fmtGB(r.usableMemGB)} usable<br>KV Budget: ${fmtGB(r.kvBudgetGB)}</div>
+      <div class="card-bar"><div class="card-bar-fill" style="width:${Math.min(100,r.memUtil*100)}%;background:${statusColor(r.memUtil)}"></div></div>
+    </div>
+    <div class="card">
+      <div class="card-label">Prefill Compute Util <span class="tip" data-tip-id="prefill-util">?</span></div>
+      <div class="card-value" style="color:${statusColor(r.prefillUtil)}">${pct(r.prefillUtil)}</div>
+      <div class="card-sub">${fmtTPS(r.reqPrefillTPS)} needed<br>Max: ${fmtTPS(r.maxPrefillTPS)}</div>
+      <div class="card-bar"><div class="card-bar-fill" style="width:${Math.min(100,r.prefillUtil*100)}%;background:${statusColor(r.prefillUtil)}"></div></div>
+    </div>
+    <div class="card">
+      <div class="card-label">Decode Throughput Util <span class="tip" data-tip-id="decode-util">?</span></div>
+      <div class="card-value" style="color:${statusColor(r.decodeUtil)}">${pct(r.decodeUtil)}</div>
+      <div class="card-sub">${fmtTPS(r.reqDecodeTPS)} needed<br>Eff. Max: ${fmtTPS(r.actualDecodeTPS)}</div>
+      <div class="card-bar"><div class="card-bar-fill" style="width:${Math.min(100,r.decodeUtil*100)}%;background:${statusColor(r.decodeUtil)}"></div></div>
+    </div>
+  </div>
+
+  <div class="charts-row">
+    <div class="chart-card">
+      <div class="chart-title">📦 GPU Memory Breakdown <span class="tip" data-tip-id="mem-chart">?</span>
+        <span style="font-size:11px;color:var(--t2);font-weight:400">${r.numGPUs}× ${r.gpu[0]}GB = ${fmtGB(r.totalMemGB)} total</span>
+      </div>
+      <div class="ch-wrap"><canvas id="mem-chart"></canvas></div>
+      <div class="legend" id="mem-legend"></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">📈 Resource Utilization</div>
+      <div class="util-list" id="util-list"></div>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+        <div style="font-size:11px;color:var(--t2);margin-bottom:8px">Max RPS by constraint <span class="tip" data-tip-id="max-rps-chart">?</span></div>
+        <div class="util-list" id="max-rps-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="details-card">
+    <div class="details-title">📋 Detailed Metrics</div>
+    <div class="details-grid">
+      <div class="dg">
+        <h4>Latency Estimates</h4>
+        <div class="dr"><span class="k">Time to First Token (TTFT) <span class="tip" data-tip-id="ttft">?</span></span><span class="v">${fmtMs(r.ttft)}</span></div>
+        <div class="dr"><span class="k">Time Between Tokens (TBT) <span class="tip" data-tip-id="tbt">?</span></span><span class="v">${fmtMs(r.tbt)}</span></div>
+        <div class="dr"><span class="k">End-to-End Latency <span class="tip" data-tip-id="e2e-latency">?</span></span><span class="v">${fmtMs(r.e2eLatency)}</span></div>
+        <div class="dr"><span class="k">Concurrent Requests <span class="tip" data-tip-id="concurrent-reqs">?</span></span><span class="v">${r.concRequests.toFixed(1)}</span></div>
+        <div class="dr"><span class="k">Crossover Batch Size <span class="tip" data-tip-id="crossover-batch">?</span></span><span class="v">${r.crossoverBatch} req</span></div>
+      </div>
+      <div class="dg">
+        <h4>KV Cache Analysis</h4>
+        <div class="dr"><span class="k">KV per token <span class="tip" data-tip-id="kv-per-tok">?</span></span><span class="v">${fmtKV(r.kvGBPerTok)}</span></div>
+        <div class="dr"><span class="k">KV per request (${r.inTok+r.outTok} tok) <span class="tip" data-tip-id="kv-per-req">?</span></span><span class="v">${fmtGB(r.kvGBPerReq)}</span></div>
+        <div class="dr"><span class="k">Total KV cache used <span class="tip" data-tip-id="total-kv">?</span></span><span class="v">${fmtGB(r.requiredKVGB)}</span></div>
+        <div class="dr"><span class="k">KV cache budget <span class="tip" data-tip-id="kv-budget">?</span></span><span class="v">${fmtGB(r.kvBudgetGB)}</span></div>
+        <div class="dr"><span class="k">Max concurrent (mem) <span class="tip" data-tip-id="max-concurrent-mem">?</span></span><span class="v">${r.kvBudgetGB>0?Math.floor(r.kvBudgetGB/r.kvGBPerReq):0} req</span></div>
+      </div>
+      <div class="dg">
+        <h4>Throughput &amp; Bandwidth</h4>
+        <div class="dr"><span class="k">Total GPU bandwidth <span class="tip" data-tip-id="total-bw">?</span></span><span class="v">${r.totalBWGBps.toFixed(0)} GB/s</span></div>
+        <div class="dr"><span class="k">Single-req decode rate <span class="tip" data-tip-id="single-decode-rate">?</span></span><span class="v">${fmtTPS(r.singleDecodeRateTPS)}</span></div>
+        <div class="dr"><span class="k">Effective decode TPS <span class="tip" data-tip-id="eff-decode-tps">?</span></span><span class="v">${fmtTPS(r.actualDecodeTPS)}</span></div>
+        <div class="dr"><span class="k">Max prefill TPS <span class="tip" data-tip-id="max-prefill-tps">?</span></span><span class="v">${fmtTPS(r.maxPrefillTPS)}</span></div>
+        <div class="dr"><span class="k">Cluster eff. TFLOPS <span class="tip" data-tip-id="eff-tflops">?</span></span><span class="v">${(r.totalTFLOPS*r.mfuPct).toFixed(0)} TF</span></div>
+      </div>
+      <div class="dg">
+        <h4>Power &amp; Cost</h4>
+        <div class="dr"><span class="k">Total GPU TDP <span class="tip" data-tip-id="total-tdp">?</span></span><span class="v">${(r.numGPUs*r.gpu[4]).toFixed(0)} W</span></div>
+        <div class="dr"><span class="k">Cost per hour <span class="tip" data-tip-id="cost-per-hr">?</span></span><span class="v">$${r.costPerHr.toFixed(2)}/hr</span></div>
+        <div class="dr"><span class="k">Cost per 1M tokens <span class="tip" data-tip-id="cost-per-mtok">?</span></span><span class="v">$${r.costPerMTok.toFixed(2)}</span></div>
+        <div class="dr"><span class="k">Min GPUs recommended <span class="tip" data-tip-id="min-gpus">?</span></span><span class="v">${r.minGPUs_rec} GPU${r.minGPUs_rec>1?'s':''}</span></div>
+        <div class="dr"><span class="k">Output Mtok/hr <span class="tip" data-tip-id="output-mtok">?</span></span><span class="v">${(r.rps*r.outTok*3600/1e6).toFixed(1)}M</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="reco-card">
+    <div class="reco-hdr">
+      <h3>💡 Analysis &amp; Recommendations</h3>
+      <span class="bn-badge ${r.bottleneck==='KV Cache Memory'?'bn-mem':r.bottleneck==='Prefill Compute'?'bn-pre':'bn-dec'}">
+        Bottleneck: ${r.bottleneck} <span class="tip" data-tip-id="bottleneck-badge" style="border-color:currentColor;background:transparent;color:inherit">?</span>
+      </span>
+    </div>
+    <div class="reco-list" id="reco-list"></div>
+  </div>
+
+  <div class="docs-wrap">
+    <div class="docs-toggle" onclick="toggleDocs(this)">
+      📖 Formulas, Assumptions &amp; Glossary
+      <span class="arr">▼</span>
+    </div>
+    <div class="docs-body" id="docs-body">${buildDocs()}</div>
+  </div>`;
+
+  renderMemChart(r);
+  renderUtilBars(r);
+  renderRecos(r);
+  initTooltips();
+}
+
+function renderMemChart(r) {
+  if (memChart) { memChart.destroy(); memChart = null; }
+  const free = Math.max(0, r.usableMemGB - r.modelMemGB - r.requiredKVGB);
+  const colors = ['#58a6ff','#bc8cff','#3fb950','#6e7681'];
+  const labels = ['Model Weights','KV Cache','Free (usable)','Framework OH'];
+  const data   = [r.modelMemGB, r.requiredKVGB, free, r.fwOverheadGB];
+  g('mem-legend').innerHTML = labels.map((l,i) =>
+    `<div class="legend-item"><div class="legend-dot" style="background:${colors[i]}"></div>${l}: ${fmtGB(data[i])}</div>`
+  ).join('') + (r.totalReqMemGB > r.usableMemGB
+    ? `<div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div>Over capacity: ${fmtGB(r.totalReqMemGB - r.usableMemGB)}</div>`
+    : '');
+  memChart = new Chart(g('mem-chart').getContext('2d'), {
+    type:'bar',
+    data:{ labels:['GPU Memory'],
+      datasets: labels.map((l,i) => ({ label:l, data:[data[i]], backgroundColor:colors[i] }))
+    },
+    options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:c=>` ${c.dataset.label}: ${fmtGB(c.raw)}` }}},
+      scales:{
+        x:{ stacked:true, max:r.totalMemGB, grid:{color:'rgba(48,54,61,.5)'}, ticks:{color:'#8b949e', callback:v=>fmtGB(v)} },
+        y:{ stacked:true, grid:{display:false}, ticks:{color:'#8b949e'} }
+      }
+    }
+  });
+}
+
+function renderUtilBars(r) {
+  const bars = [
+    { name:'Memory Utilization',     val:r.memUtil,     info:'Usable: '+fmtGB(r.usableMemGB),           tip:'mem-util-bar' },
+    { name:'Prefill Compute Util',   val:r.prefillUtil, info:'Max: '+fmtTPS(r.maxPrefillTPS),           tip:'prefill-util-bar' },
+    { name:'Decode Throughput Util', val:r.decodeUtil,  info:'Eff. Max: '+fmtTPS(r.actualDecodeTPS),    tip:'decode-util-bar' },
+    { name:'BW Saturation (decode)', val:r.bwUtil,      info:'Crossover: '+r.crossoverBatch+' req',     tip:'bw-util-bar' },
+  ];
+  g('util-list').innerHTML = bars.map(b => {
+    const col = statusColor(b.val);
+    return `<div class="util-row">
+      <div class="util-hdr"><span class="util-name">${b.name} <span class="tip" data-tip-id="${b.tip}">?</span></span><span class="util-pct" style="color:${col}">${pct(b.val)}</span></div>
+      <div class="util-bar"><div class="util-fill" style="width:${Math.min(100,b.val*100)}%;background:${col}"></div></div>
+      <div class="util-max">${b.info}</div>
+    </div>`;
+  }).join('');
+
+  const rpsItems = [
+    { name:'Memory (KV cache)',  val:r.maxRPS_mem,     bn:r.bottleneck==='KV Cache Memory' },
+    { name:'Prefill compute',    val:r.maxRPS_prefill,  bn:r.bottleneck==='Prefill Compute' },
+    { name:'Decode compute',     val:r.maxRPS_decode,   bn:r.bottleneck==='Decode Compute'  },
+  ];
+  g('max-rps-list').innerHTML = rpsItems.map(b => {
+    const col = b.bn ? 'var(--red)' : 'var(--accent)';
+    const pctNum = Math.min(100, (r.rps/b.val)*100);
+    return `<div class="util-row">
+      <div class="util-hdr"><span class="util-name">${b.name}${b.bn?' ⚠️':''}</span><span class="util-pct" style="color:${col}">${fmtK(b.val)} RPS max</span></div>
+      <div class="util-bar"><div class="util-fill" style="width:${pctNum}%;background:${col}"></div></div>
+    </div>`;
+  }).join('');
+}
+
+function renderRecos(r) {
+  const sp = r.spareCapPct;
+  const items = [];
+  if      (sp >= 50) items.push({cls:'rg',icon:'✅',txt:`Healthy headroom: ${sp.toFixed(0)}% spare capacity. You can absorb ${fmtK(r.maxAddlRPS)} more req/s before hitting a resource limit.`});
+  else if (sp >= 20) items.push({cls:'ri',icon:'ℹ️',txt:`Moderate headroom: ${sp.toFixed(0)}% spare. Consider keeping ≥20% as a production safety buffer for traffic spikes.`});
+  else if (sp >=  5) items.push({cls:'rw',icon:'⚠️',txt:`Low headroom: ${sp.toFixed(0)}% spare. Near saturation — scale before load increases further.`});
+  else               items.push({cls:'rc',icon:'🚨',txt:`Overloaded! ${sp<=0?'Current load exceeds capacity.':'Only '+sp.toFixed(1)+'% headroom.'}  Add GPUs or reduce load immediately.`});
+
+  if (r.memUtil > 0.90) items.push({cls:'rc',icon:'💾',txt:`KV cache memory at ${pct(r.memUtil)}. Options: (1) FP8 KV cache (halves KV memory), (2) INT4 weight quantization, (3) reduce max sequence length, (4) add GPUs.`});
+  else if (r.memUtil > 0.75) items.push({cls:'rw',icon:'💾',txt:`Memory at ${pct(r.memUtil)}. FP8 KV cache would free ${fmtGB(r.requiredKVGB*0.5)} of KV budget headroom.`});
+
+  if (r.prefillUtil > 0.85) items.push({cls:'rw',icon:'⚡',txt:`Prefill compute at ${pct(r.prefillUtil)}. Long prompts (${r.inTok} tokens) are a significant cost. Consider prefix caching, prompt compression, or chunked prefill.`});
+
+  if (r.modelMemGB > r.totalMemGB * 0.98) items.push({cls:'rc',icon:'⛔',txt:`Model weights (${fmtGB(r.modelMemGB)}) nearly fill all GPU memory (${fmtGB(r.totalMemGB)}). Need at least ${Math.ceil(r.modelMemGB/r.gpu[0])} GPUs for this model. No room for KV cache.`});
+
+  if (r.isMoE) items.push({cls:'ri',icon:'🔀',txt:`MoE model: ${r.params_B}B total params loaded into memory, but only ${r.activeP_B}B active per token for compute. Decode bandwidth scales with active params only.`});
+
+  if ((r.prec==='fp16'||r.prec==='bf16') && (r.params_B*0.5 + r.requiredKVGB < r.usableMemGB*0.8)) {
+    items.push({cls:'ri',icon:'🗜️',txt:`INT4 quantization would shrink model weights from ${fmtGB(r.modelMemGB)} → ${fmtGB(r.params_B*0.5)} (saves ${fmtGB(r.modelMemGB-r.params_B*0.5)}), freeing substantial KV cache budget.`});
+  }
+
+  if (r.crossoverBatch > r.concRequests * 2) items.push({cls:'ri',icon:'📡',txt:`Memory-bandwidth bound regime: concurrent ${r.concRequests.toFixed(1)} << crossover ${r.crossoverBatch}. Increasing batch size will linearly improve total decode throughput.`});
+
+  items.push({cls:'ri',icon:'💰',txt:`Cost: $${r.costPerHr.toFixed(2)}/hr for ${r.numGPUs} GPU(s), ~$${r.costPerMTok.toFixed(2)}/1M output tokens at current RPS.`});
+
+  g('reco-list').innerHTML = items.map(it =>
+    `<div class="reco ${it.cls}"><span class="reco-icon">${it.icon}</span><span>${it.txt}</span></div>`
+  ).join('');
+}
+
+function buildDocs() {
+  return `<div class="docs-grid">
+  <div class="dg2">
+    <h4>Core Formulas</h4>
+    <p><b>Model Weight Memory</b></p>
+    <div class="formula-box">model_mem_GB = params_B × bytes_per_weight
+<span class="cm">(e.g. 70B × 2 B/param = 140 GB for FP16)</span></div>
+    <h4>KV Cache Memory</h4>
+    <div class="formula-box">kv_bytes_per_pos = 2 × layers × kv_heads × head_dim × kv_bytes
+kv_GB_per_req   = kv_bytes_per_pos × (in_toks + out_toks) / 1e9
+total_kv_GB     = concurrent_reqs × kv_GB_per_req</div>
+    <h4>Concurrent Requests (Little's Law)</h4>
+    <div class="formula-box">concurrent = RPS × E2E_latency × concurrency_factor</div>
+    <h4>Prefill Throughput (Compute-Bound)</h4>
+    <div class="formula-box">max_prefill_TPS = GPUs × FP16_TFLOPS × MFU × 1e12
+                 / (2 × active_params × 1e9)
+max_RPS_prefill = max_prefill_TPS / input_tokens</div>
+    <h4>Decode Throughput (BW-Bound at Small Batch)</h4>
+    <div class="formula-box">single_decode_TPS = total_BW_GBps × 1e9
+                     / (active_params_B × bytes_per_param × 1e9)
+crossover_batch  = compute_bound_TPS / single_decode_TPS</div>
+    <h4>Latency</h4>
+    <div class="formula-box">TTFT = input_tokens / max_prefill_TPS
+TBT  = 1 / single_decode_TPS
+E2E  = TTFT + output_tokens × TBT</div>
+    <h4>Spare Capacity</h4>
+    <div class="formula-box">max_RPS = min(maxRPS_mem, maxRPS_prefill, maxRPS_decode)
+spare % = (1 − RPS / max_RPS) × 100</div>
+  </div>
+  <div class="dg2">
+    <h4>Key Assumptions</h4>
+    <ul>
+      <li>MFU (default 40%) is typical for well-tuned inference. Range: 30–55%.</li>
+      <li>All GPUs serve one model via tensor parallelism (TP = num_gpus).</li>
+      <li>Decode is memory-bandwidth bound at batch sizes below the crossover point.</li>
+      <li>KV cache is FP16 by default; FP8 KV reduces it ~2× with minimal quality loss.</li>
+      <li>MoE: total params used for memory; active params for compute &amp; bandwidth.</li>
+      <li>GPU specs are manufacturer peak ratings; real-world bandwidth ≈ 85–95% of rated.</li>
+      <li>Prefill and decode are not pipelined; continuous batching (vLLM) improves this.</li>
+    </ul>
+    <h4>Glossary</h4>
+    <ul>
+      <li><b>RPS</b> — Requests per second (throughput target)</li>
+      <li><b>TTFT</b> — Time to First Token (prefill latency)</li>
+      <li><b>TBT</b> — Time Between Tokens (decode step time)</li>
+      <li><b>MFU</b> — Model Flops Utilization (fraction of peak TFLOPS used)</li>
+      <li><b>KV cache</b> — Key/Value activations stored per token for attention</li>
+      <li><b>GQA</b> — Grouped Query Attention (fewer KV heads → smaller KV cache)</li>
+      <li><b>MoE</b> — Mixture of Experts (sparse; only some params active per token)</li>
+      <li><b>TP</b> — Tensor Parallelism (model split across N GPUs)</li>
+      <li><b>Crossover batch</b> — Batch size where decode shifts from BW-bound to compute-bound</li>
+    </ul>
+    <h4>Precision Reference</h4>
+    <ul>
+      <li><code>FP32</code> 4 B — training, highest quality, rarely used for inference</li>
+      <li><code>FP16/BF16</code> 2 B — standard inference, no measurable quality loss</li>
+      <li><code>FP8</code> 1 B — H100/H200/B200/L40S native; minimal quality loss</li>
+      <li><code>INT8</code> 1 B — SmoothQuant; slight quality drop on some models</li>
+      <li><code>INT4/GPTQ/AWQ/NF4</code> 0.5 B — 4× compression; moderate quality loss</li>
+    </ul>
+    <h4>Further Reading</h4>
+    <ul>
+      <li><a href="https://arxiv.org/abs/2309.06180" target="_blank" rel="noopener" style="color:var(--accent)">Efficient Memory Management for LLM Serving (PagedAttention)</a></li>
+      <li><a href="https://arxiv.org/abs/2211.05102" target="_blank" rel="noopener" style="color:var(--accent)">FlashAttention: Fast and Memory-Efficient Attention</a></li>
+      <li><a href="https://docs.vllm.ai" target="_blank" rel="noopener" style="color:var(--accent)">vLLM Documentation</a></li>
+      <li><a href="https://huggingface.co/docs/text-generation-inference" target="_blank" rel="noopener" style="color:var(--accent)">Hugging Face TGI Documentation</a></li>
+      <li><a href="https://en.wikipedia.org/wiki/Little%27s_law" target="_blank" rel="noopener" style="color:var(--accent)">Little's Law (Wikipedia)</a></li>
+    </ul>
+  </div>
+  </div>`;
+}
+
+function toggleDocs(el) {
+  const body = g('docs-body');
+  const arr  = el.querySelector('.arr');
+  body.classList.toggle('open');
+  arr.style.transform = body.classList.contains('open') ? 'rotate(180deg)' : '';
+}
+
+// ══════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════
+loadCustomData();
+onGPUChange();
+onModelChange();
+initTooltips();
+</script>
+</body>
+</html>
