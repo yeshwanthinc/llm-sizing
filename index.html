@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LLM GPU Capacity Sizing Calculator</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
@@ -31,22 +32,16 @@
     <div class="field"><label>GPU Name / Label</label>
       <input type="text" id="ag-name" placeholder="e.g. My Custom A100 80GB"></div>
     <div class="row2">
-      <div class="field"><label>VRAM (GB) <span class="tip" data-tip-id="tip-vram">?</span></label>
-        <input type="number" id="ag-mem" value="80" min="1"></div>
-      <div class="field"><label>Memory Bandwidth (GB/s) <span class="tip" data-tip-id="tip-bw">?</span></label>
-        <input type="number" id="ag-bw" value="2000" min="1"></div>
+      <div class="field"><label>VRAM (GB) <span class="tip" data-tip-id="tip-vram">?</span></label><input type="number" id="ag-mem" value="80" min="1"></div>
+      <div class="field"><label>Memory Bandwidth (GB/s) <span class="tip" data-tip-id="tip-bw">?</span></label><input type="number" id="ag-bw" value="2000" min="1"></div>
     </div>
     <div class="row2">
-      <div class="field"><label>FP16 TFLOPS <span class="tip" data-tip-id="tip-fp16">?</span></label>
-        <input type="number" id="ag-fp16" value="312" min="1"></div>
-      <div class="field"><label>FP8 TFLOPS (optional) <span class="tip" data-tip-id="tip-fp8">?</span></label>
-        <input type="number" id="ag-fp8" placeholder="Leave blank if N/A"></div>
+      <div class="field"><label>FP16 TFLOPS <span class="tip" data-tip-id="tip-fp16">?</span></label><input type="number" id="ag-fp16" value="312" min="1"></div>
+      <div class="field"><label>FP8 TFLOPS (optional) <span class="tip" data-tip-id="tip-fp8">?</span></label><input type="number" id="ag-fp8" placeholder="Leave blank if N/A"></div>
     </div>
     <div class="row2">
-      <div class="field"><label>TDP (W)</label>
-        <input type="number" id="ag-tdp" value="400" min="1"></div>
-      <div class="field"><label>Interconnect</label>
-        <input type="text" id="ag-ic" placeholder="e.g. NVLink 4, PCIe 5.0"></div>
+      <div class="field"><label>TDP (W)</label><input type="number" id="ag-tdp" value="400" min="1"></div>
+      <div class="field"><label>Interconnect</label><input type="text" id="ag-ic" placeholder="e.g. NVLink 4, PCIe 5.0"></div>
     </div>
     <button class="modal-save-btn" onclick="saveCustomGPU()">＋ Save GPU</button>
     <div class="modal-section-title">Saved Custom GPUs</div>
@@ -62,6 +57,21 @@
   </div>
   <div class="modal-body">
     <div class="modal-note">Define a model's architecture. KV cache sizing requires layers, KV heads, and head dimension. Find these in the model's <code>config.json</code> on Hugging Face.</div>
+
+    <div class="hf-import">
+      <div class="field"><label>Import from Hugging Face <span class="tip" data-tip-id="hf-import">?</span></label>
+        <div class="row2">
+          <input type="text" id="am-hf-id" placeholder="e.g. meta-llama/Llama-3.1-8B or config.json URL">
+          <button type="button" class="modal-save-btn" style="align-self:stretch" onclick="fetchHFConfig()">⇩ Fetch</button>
+        </div>
+      </div>
+      <div class="field"><label>...or paste config.json contents</label>
+        <textarea id="am-hf-paste" rows="3" placeholder='{"num_hidden_layers": 32, "num_attention_heads": 32, ...}'></textarea>
+      </div>
+      <button type="button" class="modal-save-btn" onclick="parseHFConfigText()">Parse Pasted JSON</button>
+      <div id="hf-import-status" class="hf-import-status"></div>
+    </div>
+
     <div class="field"><label>Model Name / Label</label>
       <input type="text" id="am-name" placeholder="e.g. My Fine-tuned Llama 70B"></div>
     <div class="row2">
@@ -96,8 +106,24 @@
     <h1>LLM GPU Capacity Sizing Calculator</h1>
     <p>Estimate spare capacity, memory usage, and throughput for LLM inference deployments</p>
   </div>
-  <div class="hdr-badge">v2.1 · 2025</div>
+  <button class="hdr-btn" id="share-btn" onclick="copyShareLink()" title="Copy a link that encodes your current config">🔗 Share</button>
+  <button class="hdr-btn" id="compare-btn" onclick="toggleCompareMode()" title="Compare 2-3 configs side by side">⚖️ Compare</button>
+  <div class="hdr-badge">v2.2 · 2025</div>
 </header>
+
+<!-- ═══════ COMPARISON PANEL ═══════ -->
+<div class="cmp-panel" id="cmp-panel" style="display:none">
+  <div class="cmp-panel-hdr">
+    <h2>⚖️ Compare Configurations</h2>
+    <p>Shared workload &amp; advanced settings from the sidebar apply to every slot below — only GPU, model, precision and GPU count vary per slot.</p>
+  </div>
+  <div class="cmp-slots" id="cmp-slots"></div>
+  <div class="cmp-actions">
+    <button class="modal-save-btn" id="cmp-add-btn" onclick="addCompareSlot()">＋ Add Config (max 3)</button>
+    <button class="cmp-run-btn" onclick="runComparison()">⚖️ Run Comparison</button>
+  </div>
+  <div id="cmp-results"></div>
+</div>
 
 <div class="layout">
 <!-- ═══════════════════ SIDEBAR ═══════════════════ -->
@@ -107,6 +133,15 @@
   <div class="sec">
     <div class="sec-hdr">📊 Workload</div>
     <div class="sec-body">
+      <div class="field">
+        <label>Preset <span class="tip" data-tip-id="workload-preset">?</span></label>
+        <select id="workload-preset" onchange="applyWorkloadPreset()">
+          <option value="">Custom (manual entry)</option>
+          <option value="chat">Chat</option>
+          <option value="rag">RAG</option>
+          <option value="agentic">Agentic / Long CoT</option>
+        </select>
+      </div>
       <div class="field">
         <label>Requests / Second (RPS)
           <span class="tip" data-tip-id="rps">?</span></label>
@@ -120,6 +155,16 @@
         <div class="field">
           <label>Output Tokens <span class="tip" data-tip-id="output-tokens">?</span></label>
           <input type="number" id="output-tokens" value="256" min="1">
+        </div>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label>Cached Prompt Tokens <span class="tip" data-tip-id="cached-tokens">?</span></label>
+          <input type="number" id="cached-tokens" value="0" min="0">
+        </div>
+        <div class="field">
+          <label>Cache Hit Rate % <span class="tip" data-tip-id="cache-hit-rate">?</span></label>
+          <input type="number" id="cache-hit-rate" value="0" min="0" max="100">
         </div>
       </div>
     </div>
@@ -138,6 +183,7 @@
             <option>Llama 3.2 1B</option><option>Llama 3.2 3B</option>
             <option>Llama 3.1 8B</option><option selected>Llama 3.1 70B</option>
             <option>Llama 3.3 70B</option><option>Llama 3.1 405B</option>
+            <option>Llama 4 Scout (MoE)</option><option>Llama 4 Maverick (MoE)</option>
           </optgroup>
           <optgroup label="── Mistral ──">
             <option>Mistral 7B v0.3</option><option>Mistral Nemo 12B</option>
@@ -146,6 +192,8 @@
           <optgroup label="── Gemma ──">
             <option>Gemma 2B</option><option>Gemma 7B</option>
             <option>Gemma 2 9B</option><option>Gemma 2 27B</option>
+            <option>Gemma 3 1B</option><option>Gemma 3 4B</option>
+            <option>Gemma 3 12B</option><option>Gemma 3 27B</option>
           </optgroup>
           <optgroup label="── Phi ──">
             <option>Phi-3 Mini 3.8B</option><option>Phi-3 Medium 14B</option><option>Phi-4 14B</option>
@@ -153,10 +201,17 @@
           <optgroup label="── Qwen ──">
             <option>Qwen2.5 0.5B</option><option>Qwen2.5 1.5B</option><option>Qwen2.5 7B</option>
             <option>Qwen2.5 14B</option><option>Qwen2.5 32B</option><option>Qwen2.5 72B</option>
+            <option>Qwen3 0.6B</option><option>Qwen3 4B</option><option>Qwen3 8B</option>
+            <option>Qwen3 14B</option><option>Qwen3 32B</option>
+            <option>Qwen3 30B-A3B (MoE)</option><option>Qwen3 235B-A22B (MoE)</option>
           </optgroup>
           <optgroup label="── DeepSeek ──">
             <option>DeepSeek-R1 Distill 7B</option><option>DeepSeek-R1 Distill 14B</option>
             <option>DeepSeek-R1 Distill 70B</option><option>DeepSeek-R1 671B (MoE)</option>
+            <option>DeepSeek-V3 671B (MoE)</option>
+          </optgroup>
+          <optgroup label="── GPT-OSS ──">
+            <option>GPT-OSS 20B (MoE)</option><option>GPT-OSS 120B (MoE)</option>
           </optgroup>
           <optgroup label="── Other ──">
             <option>Custom</option>
@@ -243,9 +298,15 @@
         </select>
       </div>
       <div id="gpu-info-box" class="gpu-info"></div>
-      <div class="field">
-        <label>Number of GPUs <span class="tip" data-tip-id="num-gpus">?</span></label>
-        <input type="number" id="num-gpus" value="8" min="1" max="512">
+      <div class="row2">
+        <div class="field">
+          <label>Number of GPUs <span class="tip" data-tip-id="num-gpus">?</span></label>
+          <input type="number" id="num-gpus" value="8" min="1" max="512">
+        </div>
+        <div class="field">
+          <label>GPUs per Node <span class="tip" data-tip-id="gpus-per-node">?</span></label>
+          <input type="number" id="gpus-per-node" value="8" min="1" max="512">
+        </div>
       </div>
     </div>
   </div>
@@ -274,6 +335,33 @@
           <input type="number" id="cost-per-gpu-hr" value="3.00" min="0" step="0.5">
         </div>
       </div>
+      <div class="field checkbox-field">
+        <label><input type="checkbox" id="spot-enabled" onchange="g('spot-cost-per-gpu-hr').disabled=!this.checked"> Use Spot / Preemptible Pricing <span class="tip" data-tip-id="spot-pricing">?</span></label>
+      </div>
+      <div class="field">
+        <label>$/GPU-Hour (Spot) <span class="tip" data-tip-id="spot-pricing">?</span></label>
+        <input type="number" id="spot-cost-per-gpu-hr" value="1.00" min="0" step="0.1" disabled>
+      </div>
+    </div>
+  </div>
+
+  <!-- LoRA -->
+  <div class="sec">
+    <div class="sec-hdr">🧩 LoRA Adapters</div>
+    <div class="sec-body">
+      <div class="field checkbox-field">
+        <label><input type="checkbox" id="lora-enabled"> Serve LoRA Adapters <span class="tip" data-tip-id="lora">?</span></label>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label>LoRA Rank (r)</label>
+          <input type="number" id="lora-rank" value="16" min="1" max="256">
+        </div>
+        <div class="field">
+          <label># Active Adapters</label>
+          <input type="number" id="lora-adapters" value="4" min="1" max="256">
+        </div>
+      </div>
     </div>
   </div>
 
@@ -297,6 +385,12 @@
 <script src="js/tooltip.js"></script>
 <script src="js/selectors.js"></script>
 <script src="js/calculate.js"></script>
+<script src="js/presets.js"></script>
+<script src="js/sweep.js"></script>
+<script src="js/compare.js"></script>
+<script src="js/urlstate.js"></script>
+<script src="js/export.js"></script>
+<script src="js/hf-import.js"></script>
 <script src="js/docs.js"></script>
 <script src="js/render.js"></script>
 <script src="js/main.js"></script>

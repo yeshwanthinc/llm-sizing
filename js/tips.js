@@ -99,6 +99,52 @@ const TIPS = {
       { t: "Little's Law (Wikipedia)", u: 'https://en.wikipedia.org/wiki/Little%27s_law' },
     ]
   },
+  'workload-preset': {
+    title: 'Workload Preset',
+    text: 'Pre-fills RPS, input/output tokens, and system-prompt caching assumptions for a common usage pattern. Still fully editable afterward — presets are a starting point, not a lock.',
+  },
+  'cached-tokens': {
+    title: 'Cached / System Prompt Tokens',
+    text: 'Tokens at the start of the prompt that are shared across requests (system message, few-shot examples, RAG instructions) and can be served from a prefix cache instead of recomputed and re-stored per request.',
+    links: [ { t: 'Automatic prefix caching (vLLM)', u: 'https://docs.vllm.ai/en/latest/automatic_prefix_caching/apc.html' } ],
+  },
+  'cache-hit-rate': {
+    title: 'Cache Hit Rate %',
+    text: 'Fraction of requests that reuse the cached prefix rather than triggering a cold (full) computation of it. Higher hit rates reduce both prefill compute and duplicated KV cache storage for the shared portion.',
+    range: 'Single shared system prompt: 60–90% · Per-user/session prompts: 20–50%',
+  },
+  'gpus-per-node': {
+    title: 'GPUs per Node',
+    text: 'How many GPUs share one physical node (and its intra-node interconnect, e.g. NVLink). When Number of GPUs exceeds this, the extra GPUs are modeled as additional nodes connected via pipeline parallelism, which incurs a communication penalty applied to effective MFU.',
+    range: 'Typical single-node systems: 4 or 8 GPUs',
+  },
+  'spot-pricing': {
+    title: 'Spot / Preemptible Pricing',
+    text: 'Spot/preemptible instances cost substantially less than on-demand but can be reclaimed by the cloud provider with little notice — a real risk for stateful, long-running inference servers. When enabled, cost figures use the spot rate instead of the on-demand $/GPU-hr.',
+    range: 'Typical spot discount: 60–80% off on-demand',
+  },
+  'lora': {
+    title: 'LoRA Adapter Memory',
+    text: 'Multi-tenant serving (e.g. S-LoRA, vLLM multi-LoRA) keeps several low-rank adapters resident in GPU memory alongside the base model. Estimated as 2×rank×hidden_size×6 target matrices×layers×adapters×bytes/param — a simplification since actual target_modules vary by adapter config.',
+    links: [ { t: 'S-LoRA: serving thousands of LoRA adapters', u: 'https://arxiv.org/abs/2311.03285' } ],
+  },
+  'hf-import': {
+    title: 'Import from Hugging Face',
+    text: 'Fetches a model\'s config.json (by "org/model" id or a direct URL) and auto-fills layers, KV heads, attention heads, head dimension, and MoE detection. If the fetch is blocked by CORS, open the URL yourself and paste the JSON into the box below instead — that path always works.',
+  },
+  'sweep-chart': {
+    title: 'Context-Length Sweep',
+    text: 'Recomputes KV cache demand at context lengths from 1k to 128k tokens, holding output tokens and RPS fixed (concurrency re-derives naturally via Little\'s Law as latency grows with context). Shows where growing context length would exceed the KV cache budget — the "gotcha curve" that a single-point calculation hides.',
+  },
+  'prefix-cache': {
+    title: 'Prefix Caching Effect',
+    text: 'With a cache hit, the shared prefix is stored once and reused rather than duplicated per request, and only the non-cached remainder needs prefill compute — reducing both TTFT and KV memory pressure.',
+  },
+  'pp-nodes': {
+    title: 'Pipeline Parallelism Across Nodes',
+    text: 'When Number of GPUs exceeds GPUs per Node, the cluster is modeled as multiple nodes running pipeline parallelism (with tensor parallelism within each node). Cross-node communication is approximated as an MFU penalty keyed off the interconnect type — a simplification, since real inter-node fabric (e.g. InfiniBand) is a separate spec this tool doesn\'t collect.',
+    links: [ { t: 'GPipe: pipeline parallelism', u: 'https://arxiv.org/abs/1811.06965' } ],
+  },
   'cost-per-gpu-hr': {
     title: 'Cost per GPU-Hour ($)',
     text: 'On-demand or reserved hourly cost per single GPU. Used to estimate $/hr and cost per 1M tokens. Check your cloud provider\'s current pricing for accurate figures.',

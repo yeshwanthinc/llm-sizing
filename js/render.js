@@ -35,6 +35,12 @@ function renderDashboard(r) {
     </div>
   </div>
 
+  <div class="export-bar">
+    <button class="export-btn" onclick="exportMarkdown()">📋 Copy Markdown</button>
+    <button class="export-btn" onclick="exportJSON()">⬇ JSON</button>
+    <button class="export-btn" onclick="exportPNG()">🖼 PNG Snapshot</button>
+  </div>
+
   <div class="charts-row">
     <div class="chart-card">
       <div class="chart-title">📦 GPU Memory Breakdown <span class="tip" data-tip-id="mem-chart">?</span>
@@ -51,6 +57,12 @@ function renderDashboard(r) {
         <div class="util-list" id="max-rps-list"></div>
       </div>
     </div>
+  </div>
+
+  <div class="chart-card">
+    <div class="chart-title">🧮 Context-Length Sweep — KV Memory vs. Context Length <span class="tip" data-tip-id="sweep-chart">?</span></div>
+    <div class="ch-wrap" style="height:220px"><canvas id="sweep-chart"></canvas></div>
+    <div class="sweep-note" id="sweep-note"></div>
   </div>
 
   <div class="details-card">
@@ -71,6 +83,8 @@ function renderDashboard(r) {
         <div class="dr"><span class="k">Total KV cache used <span class="tip" data-tip-id="total-kv">?</span></span><span class="v">${fmtGB(r.requiredKVGB)}</span></div>
         <div class="dr"><span class="k">KV cache budget <span class="tip" data-tip-id="kv-budget">?</span></span><span class="v">${fmtGB(r.kvBudgetGB)}</span></div>
         <div class="dr"><span class="k">Max concurrent (mem) <span class="tip" data-tip-id="max-concurrent-mem">?</span></span><span class="v">${r.kvBudgetGB>0?Math.floor(r.kvBudgetGB/r.kvGBPerReq):0} req</span></div>
+        ${r.cachedTok > 0 ? `<div class="dr"><span class="k">Shared prefix KV (cached) <span class="tip" data-tip-id="prefix-cache">?</span></span><span class="v">${fmtGB(r.sharedPrefixKVGB)}</span></div>
+        <div class="dr"><span class="k">Effective prefill tokens <span class="tip" data-tip-id="prefix-cache">?</span></span><span class="v">${r.effectivePrefillTok.toFixed(0)} / ${r.inTok}</span></div>` : ''}
       </div>
       <div class="dg">
         <h4>Throughput &amp; Bandwidth</h4>
@@ -78,15 +92,24 @@ function renderDashboard(r) {
         <div class="dr"><span class="k">Single-req decode rate <span class="tip" data-tip-id="single-decode-rate">?</span></span><span class="v">${fmtTPS(r.singleDecodeRateTPS)}</span></div>
         <div class="dr"><span class="k">Effective decode TPS <span class="tip" data-tip-id="eff-decode-tps">?</span></span><span class="v">${fmtTPS(r.actualDecodeTPS)}</span></div>
         <div class="dr"><span class="k">Max prefill TPS <span class="tip" data-tip-id="max-prefill-tps">?</span></span><span class="v">${fmtTPS(r.maxPrefillTPS)}</span></div>
-        <div class="dr"><span class="k">Cluster eff. TFLOPS <span class="tip" data-tip-id="eff-tflops">?</span></span><span class="v">${(r.totalTFLOPS*r.mfuPct).toFixed(0)} TF</span></div>
+        <div class="dr"><span class="k">Cluster eff. TFLOPS <span class="tip" data-tip-id="eff-tflops">?</span></span><span class="v">${(r.totalTFLOPS*r.effMfuPct).toFixed(0)} TF</span></div>
       </div>
       <div class="dg">
         <h4>Power &amp; Cost</h4>
         <div class="dr"><span class="k">Total GPU TDP <span class="tip" data-tip-id="total-tdp">?</span></span><span class="v">${(r.numGPUs*r.gpu[4]).toFixed(0)} W</span></div>
-        <div class="dr"><span class="k">Cost per hour <span class="tip" data-tip-id="cost-per-hr">?</span></span><span class="v">$${r.costPerHr.toFixed(2)}/hr</span></div>
+        <div class="dr"><span class="k">Cost per hour ${r.spotEnabled?'<b style="color:var(--orange)">[Spot]</b>':''} <span class="tip" data-tip-id="cost-per-hr">?</span></span><span class="v">$${r.costPerHr.toFixed(2)}/hr</span></div>
         <div class="dr"><span class="k">Cost per 1M tokens <span class="tip" data-tip-id="cost-per-mtok">?</span></span><span class="v">$${r.costPerMTok.toFixed(2)}</span></div>
         <div class="dr"><span class="k">Min GPUs recommended <span class="tip" data-tip-id="min-gpus">?</span></span><span class="v">${r.minGPUs_rec} GPU${r.minGPUs_rec>1?'s':''}</span></div>
         <div class="dr"><span class="k">Output Mtok/hr <span class="tip" data-tip-id="output-mtok">?</span></span><span class="v">${(r.rps*r.outTok*3600/1e6).toFixed(1)}M</span></div>
+        ${r.loraEnabled ? `<div class="dr"><span class="k">LoRA adapter memory <span class="tip" data-tip-id="lora">?</span></span><span class="v">${fmtGB(r.loraMemGB)}</span></div>` : ''}
+      </div>
+      <div class="dg">
+        <h4>Parallelism &amp; Scale</h4>
+        <div class="dr"><span class="k">Nodes (pipeline stages) <span class="tip" data-tip-id="pp-nodes">?</span></span><span class="v">${r.nodeCount}</span></div>
+        <div class="dr"><span class="k">Tensor-parallel degree / node <span class="tip" data-tip-id="pp-nodes">?</span></span><span class="v">${Math.min(r.numGPUs, r.gpusPerNode)}</span></div>
+        <div class="dr"><span class="k">Interconnect <span class="tip" data-tip-id="pp-nodes">?</span></span><span class="v">${esc(r.interconnect||'—')}</span></div>
+        <div class="dr"><span class="k">Multi-node MFU penalty <span class="tip" data-tip-id="pp-nodes">?</span></span><span class="v">${r.nodeCount>1 ? '-'+((1-r.interconnectPenalty)*100).toFixed(0)+'%' : 'n/a (single node)'}</span></div>
+        <div class="dr"><span class="k">Effective MFU <span class="tip" data-tip-id="pp-nodes">?</span></span><span class="v">${(r.effMfuPct*100).toFixed(1)}%</span></div>
       </div>
     </div>
   </div>

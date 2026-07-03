@@ -53,7 +53,34 @@ const MODEL_SPECS = {
   "DeepSeek-R1 Distill 14B":  { p:14,   L:28,  kv:16,  h:16,  hd:128 },
   "DeepSeek-R1 Distill 70B":  { p:70,   L:80,  kv:8,   h:64,  hd:128 },
   "DeepSeek-R1 671B (MoE)":   { p:671,  L:61,  kv:128, h:128, hd:128, ap:37, moe:true },
+  // ── Newer releases (2025) — best-effort specs from public docs/blog posts,
+  // not all vendors publish a full config.json. Verify against the model's
+  // actual config.json (see "Import from Hugging Face" in Add Custom Model)
+  // before using these for a production capacity decision.
+  "Llama 4 Scout (MoE)":      { p:109,  L:48,  kv:8,   h:40,  hd:128, ap:17,  moe:true },
+  "Llama 4 Maverick (MoE)":   { p:400,  L:48,  kv:8,   h:40,  hd:128, ap:17,  moe:true },
+  "Qwen3 0.6B":               { p:0.6,  L:28,  kv:8,   h:16,  hd:128 },
+  "Qwen3 4B":                 { p:4,    L:36,  kv:8,   h:32,  hd:128 },
+  "Qwen3 8B":                 { p:8,    L:36,  kv:8,   h:32,  hd:128 },
+  "Qwen3 14B":                { p:14,   L:40,  kv:8,   h:40,  hd:128 },
+  "Qwen3 32B":                { p:32,   L:64,  kv:8,   h:64,  hd:128 },
+  "Qwen3 30B-A3B (MoE)":      { p:30,   L:48,  kv:4,   h:32,  hd:128, ap:3,   moe:true },
+  "Qwen3 235B-A22B (MoE)":    { p:235,  L:94,  kv:4,   h:64,  hd:128, ap:22,  moe:true },
+  "DeepSeek-V3 671B (MoE)":   { p:671,  L:61,  kv:128, h:128, hd:128, ap:37,  moe:true },
+  "Gemma 3 1B":               { p:1,    L:26,  kv:4,   h:4,   hd:256 },
+  "Gemma 3 4B":               { p:4,    L:34,  kv:4,   h:8,   hd:256 },
+  "Gemma 3 12B":              { p:12,   L:48,  kv:8,   h:16,  hd:256 },
+  "Gemma 3 27B":              { p:27,   L:62,  kv:8,   h:32,  hd:128 },
+  "GPT-OSS 20B (MoE)":        { p:20,   L:24,  kv:8,   h:64,  hd:64,  ap:3.6, moe:true },
+  "GPT-OSS 120B (MoE)":       { p:120,  L:36,  kv:8,   h:64,  hd:64,  ap:5.1, moe:true },
   "Custom":                   { p:null, L:null, kv:null, h:null, hd:null },
 };
 
 const PRECISION_BYTES = { fp32:4, fp16:2, bf16:2, fp8:1, int8:1, int4:0.5, nf4:0.5 };
+
+// Assumed LoRA target matrices per transformer layer (q,k,v,o + mlp up/down)
+// — a simplification; actual target_modules vary by adapter config.
+const LORA_TARGET_MATRICES = 6;
+
+// Context lengths (tokens) swept by the KV-memory-vs-context-length chart.
+const SWEEP_CONTEXT_LENGTHS = [1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072];
