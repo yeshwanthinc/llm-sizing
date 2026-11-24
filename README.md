@@ -2,7 +2,7 @@
 
 A static, client-side calculator for estimating GPU memory usage, throughput, spare capacity, and cost for LLM inference deployments.
 
-Open `index.html` directly in a browser, or visit the hosted version on GitHub Pages.
+Open `index.html` directly in a browser, or visit the [hosted version on GitHub Pages](https://yeshwanthinc.github.io/llm-sizing/).
 
 ## Structure
 
